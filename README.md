@@ -42,6 +42,47 @@ To ensure trustworthy and reliable responses, OmniBrain integrates **Self-RAG**,
 
 ---
 
+Pipeline : 
+                    User Query
+                         │
+                         ▼
+               Agent / Planner (LLM)
+                         │
+      ┌──────────────────┼──────────────────┐
+      │                  │                  │
+      ▼                  ▼                  ▼
+Understand Intent   Break into Tasks   Decide Tools
+      │                  │                  │
+      └──────────────────┼──────────────────┘
+                         ▼
+               Query Rewriting Agent
+                         │
+                         ▼
+             Hybrid Retrieval Engine
+      (Vector DB + BM25 + SQL + APIs + Web)
+                         │
+                         ▼
+                 Reranking Model
+                         │
+                         ▼
+              Context Evaluation Agent
+                         │
+        Enough Information?
+              │                │
+             YES              NO
+              │                │
+              ▼                ▼
+        Answer Agent      Search Again
+              │                │
+              └────────────────┘
+                         │
+                         ▼
+          Verification / Reflection Agent
+                         │
+          Fact Check • Citation Check
+                         │
+                         ▼
+                Final Response
 ## Objective
 
 To develop a production-grade Agentic AI system capable of autonomous reasoning across multimodal enterprise documents by combining semantic retrieval, visual understanding, and structured data querying, while delivering reliable, context-aware, and citation-backed responses.
