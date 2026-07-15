@@ -1,0 +1,53 @@
+ **work flow**
+ 
+ 
+                          START
+                            │
+                            ▼
+                 User Opens OmniBrain
+                            │
+                            ▼
+                 User Uploads Document
+                (PDF / DOCX / TXT)
+                            │
+                            ▼
+               Document Validation Check
+                  ┌─────────┴─────────┐
+                  │                   │
+              Invalid             Valid File
+                  │                   │
+                  ▼                   ▼
+          Show Error Message     Extract Text
+                                      │
+                                      ▼
+                         Clean & Preprocess Text
+                                      │
+                                      ▼
+                         Split into Small Chunks
+                                      │
+                                      ▼
+                     Generate Text Embeddings
+                                      │
+                                      ▼
+                   Store in Vector Database
+                                      │
+                                      ▼
+                      User Asks a Question
+                                      │
+                                      ▼
+                     Convert Query to Embedding
+                                      │
+                                      ▼
+                Retrieve Relevant Document Chunks
+                                      │
+                                      ▼
+                   Send Context + Query to LLM
+                                      │
+                                      ▼
+                AI Generates Accurate Response
+                                      │
+                                      ▼
+          Display Answer + Summary + References
+                                      │
+                                      ▼
+                                     END
