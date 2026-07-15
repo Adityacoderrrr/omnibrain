@@ -22,7 +22,6 @@ _DOCUMENT_REGISTRY: dict[str, dict] = {}
 
 ALLOWED_CONTENT_TYPES = {"application/pdf"}
 
-
 @router.post("/upload", response_model=DocumentUploadResponse, status_code=202)
 async def upload_document(file: UploadFile = File(...)) -> DocumentUploadResponse:
     """
