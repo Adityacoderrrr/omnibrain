@@ -1,0 +1,147 @@
+# ==========================
+# Core Backend
+# ==========================
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic
+pydantic-settings
+httpx
+aiofiles
+
+# ==========================
+# LangChain & LangGraph
+# ==========================
+langchain
+langgraph
+langchain-core
+langchain-community
+langchain-openai
+langchain-qdrant
+langchain-experimental
+langsmith
+
+# ==========================
+# OpenAI
+# ==========================
+openai
+tiktoken
+
+# ==========================
+# Vector Database
+# ==========================
+qdrant-client
+faiss-cpu
+
+# ==========================
+# Embedding Models
+# ==========================
+sentence-transformers
+transformers
+torch
+accelerate
+
+# ==========================
+# Vision Models
+# ==========================
+Pillow
+opencv-python
+torchvision
+timm
+
+# ==========================
+# PDF Processing
+# ==========================
+pymupdf
+pdfplumber
+unstructured
+pypdf
+
+# ==========================
+# OCR
+# ==========================
+pytesseract
+
+# ==========================
+# Table Extraction
+# ==========================
+camelot-py
+tabula-py
+pandas
+numpy
+openpyxl
+
+# ==========================
+# SQL Agent
+# ==========================
+sqlalchemy
+psycopg2-binary
+
+# ==========================
+# Database
+# ==========================
+alembic
+
+# ==========================
+# Search / Reranking
+# ==========================
+rank-bm25
+cohere
+
+# ==========================
+# Utilities
+# ==========================
+orjson
+tenacity
+rich
+tqdm
+python-multipart
+loguru
+
+# ==========================
+# Guardrails
+# ==========================
+nemoguardrails
+
+# ==========================
+# Evaluation
+# ==========================
+langfuse
+
+# ==========================
+# API / Validation
+# ==========================
+jsonschema
+
+# ==========================
+# Caching
+# ==========================
+redis
+
+# ==========================
+# Async Tasks
+# ==========================
+celery
+
+# ==========================
+# Testing
+# ==========================
+pytest
+pytest-asyncio
+
+# ==========================
+# Formatting
+# ==========================
+black
+isort
+ruff
+
+# ==========================
+# Optional Local LLM Support
+# ==========================
+ollama
+
+# ==========================
+# Optional HuggingFace Hub
+# ==========================
+huggingface-hub
