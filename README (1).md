@@ -1,6 +1,6 @@
 # 🧠 OmniBrain: An Agentic Multi-Modal RAG Orchestrator for Enterprise Document Intelligence
 
-### A Research and Technical Design Document
+### A Research and Technical Design Documents
 
 ![Domain](https://img.shields.io/badge/Domain-LLMs%20%26%20Agentic%20AI-blueviolet)
 ![Orchestration](https://img.shields.io/badge/Orchestration-LangGraph-1c3d5a)
