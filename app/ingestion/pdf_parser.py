@@ -70,3 +70,12 @@ def parse_pdf(pdf_path: Path) -> list[PageRegion]:
 
     return regions
 
+def detect_tables(pdf_path: Path, page_number: int) -> list[PageRegion]:
+    """
+    Detect and extract table regions from a single PDF page using pdfplumber.
+
+    """
+    # TODO: implement using pdfplumber.open(pdf_path).pages[page_number - 1].extract_tables()
+    
+    return []
+
