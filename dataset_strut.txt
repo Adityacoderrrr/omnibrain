@@ -1,0 +1,207 @@
+OmniBrain Dataset Structure
+1. Healthcare Dataset 🏥
+
+Purpose
+
+Summarize medical reports
+Answer questions from medical documents
+Extract diseases, medicines, symptoms
+Public Datasets
+Dataset	Use
+PubMed	Medical research papers
+MIMIC-III	Clinical records
+MedQA	Medical Question Answering
+MedMCQA	Medical MCQs
+PMC Open Access	Medical articles
+
+Data Format
+
+{
+  "document_id": 1,
+  "title": "Diabetes Mellitus",
+  "text": "...long medical report...",
+  "summary": "...short summary..."
+}
+
+Expected Size
+
+10,000–100,000 documents
+
+Applications
+
+Medical chatbot
+Disease explanation
+Report summarization
+2. Legal Dataset ⚖️
+
+Purpose
+
+Summarize court judgments
+Explain legal contracts
+Answer legal questions
+
+Recommended Datasets
+
+Dataset	Use
+IN-Abs	Indian Supreme Court judgment summaries
+MILDSum	Multilingual Indian legal judgment summaries
+LEDGAR	Contract clause classification
+
+These datasets are commonly used for Indian legal document summarization research.
+
+Format
+
+{
+ "case_id":101,
+ "document":"Long legal document...",
+ "summary":"Short judgment summary"
+}
+3. Finance Dataset 💰
+
+Purpose
+
+Annual report summarization
+Financial chatbot
+Earnings report analysis
+
+Datasets
+
+SEC EDGAR Reports
+Financial PhraseBank
+FiQA
+Earnings Call Dataset
+
+Format
+
+{
+"title":"Annual Report",
+"text":"Complete report...",
+"summary":"Revenue increased..."
+}
+4. Education Dataset 📚
+
+Purpose
+
+Notes summarization
+PDF chatbot
+Student Q&A
+
+Datasets
+
+SQuAD
+Natural Questions
+ArXiv Papers
+Research Papers
+NCERT PDFs
+
+Format
+
+{
+"chapter":"Machine Learning",
+"text":"Long chapter...",
+"summary":"Important concepts..."
+}
+5. Research Papers Dataset
+
+Purpose
+
+AI paper summarization
+Research assistant
+
+Datasets
+
+ArXiv
+Semantic Scholar Open Research Corpus
+Papers With Code metadata
+6. Business Dataset
+
+Purpose
+
+Company reports
+Market analysis
+Business insights
+
+Datasets
+
+Kaggle Business Reports
+Annual Reports
+Company Filings
+7. News Dataset
+
+Purpose
+
+News summarization
+Headline generation
+
+Datasets
+
+CNN/DailyMail
+XSum
+BBC News Dataset
+8. FAQ Dataset
+
+Purpose
+
+Question answering
+Chatbot testing
+
+Datasets
+
+SQuAD
+Natural Questions
+MS MARCO
+Recommended Folder Structure
+OmniBrain_Dataset/
+
+│
+├── healthcare/
+│     ├── reports/
+│     ├── summaries/
+│
+├── finance/
+│     ├── reports/
+│     ├── summaries/
+│
+├── legal/
+│     ├── judgments/
+│     ├── summaries/
+│
+├── education/
+│     ├── books/
+│     ├── notes/
+│
+├── research/
+│     ├── papers/
+│     ├── summaries/
+│
+├── business/
+│
+├── faq/
+│
+└── embeddings/
+Dataset Pipeline
+PDF
+     │
+     ▼
+Text Extraction
+     │
+     ▼
+Cleaning
+     │
+     ▼
+Chunking
+     │
+     ▼
+Embeddings
+     │
+     ▼
+FAISS Vector Database
+     │
+     ▼
+Retriever
+     │
+     ▼
+LLM
+     │
+     ▼
+Summary / Answer
