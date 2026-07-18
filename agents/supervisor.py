@@ -1,9 +1,23 @@
 from .state import AgentState
 
-def supervisor(state: AgentState):
+
+def supervisor(state: AgentState) -> AgentState:
     """
-    Decide which agent should handle the query.
+    Decide which agent should handle the user's query.
     """
-    print("Supervisor received:", state["question"])
+
+    question = state["question"].lower()
+
+    # Route based on keywords
+    if any(word in question for word in ["image", "graph", "chart", "figure", "diagram"]):
+        state["selected_agent"] = "vision"
+
+    elif any(word in question for word in ["database", "sql", "table", "record", "sales"]):
+        state["selected_agent"] = "sql"
+
+    else:
+        state["selected_agent"] = "search"
+
+    print(f"Supervisor selected: {state['selected_agent']} agent")
 
     return state
