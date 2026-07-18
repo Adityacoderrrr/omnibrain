@@ -1,6 +1,6 @@
 # OmniBrain — System Diagrams
 
-Flow diagram, Data Flow Diagrams (Level 0 & 1), and UML diagrams (Use Case, Sequence, Class, Component, Deployment) for the OmniBrain Agentic Multi-Modal RAG Orchestrator.
+Flow diagram, Data Flow Diagrams (Level 0 & 1), and UML diagrams (Use Case, Sequence, Class, Component, Deployment) for the OmniBrain Agentic Multi-Modal RAG Orchestrator...
 
 All diagrams are written in [Mermaid](https://mermaid.js.org/) and render automatically on GitHub — no image files required.
 
