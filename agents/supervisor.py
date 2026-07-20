@@ -1,23 +1,47 @@
+import logging
 from .state import AgentState
+from .prompts import SUPERVISOR_PROMPT
+from .llm import invoke_llm
+
+logger = logging.getLogger("omnibrain.agents.supervisor")
 
 
 def supervisor(state: AgentState) -> AgentState:
     """
-    Decide which agent should handle the user's query.
+    Supervisor node that determines the best specialist agent to handle the query.
+
+    Args:
+        state (AgentState): The current agent execution state.
+
+    Returns:
+        AgentState: The updated state with the routing decision.
     """
+    logger.info("Supervisor parsing query: '%s'", state.get("question"))
+    try:
+        question = state.get("question", "")
+        if not question:
+            raise ValueError("State key 'question' is missing or empty.")
 
-    question = state["question"].lower()
+        # Classify routing via LLM (or fallback mock engine)
+        routing_decision = invoke_llm(prompt=question, system_prompt=SUPERVISOR_PROMPT)
 
-    # Route based on keywords
-    if any(word in question for word in ["image", "graph", "chart", "figure", "diagram"]):
-        state["selected_agent"] = "vision"
+        # Clean and normalize routing decision
+        routing_decision = routing_decision.strip().lower()
+        if routing_decision not in ["vision", "sql", "search"]:
+            logger.warning(
+                "Invalid supervisor routing result: '%s'. Falling back to 'search'.",
+                routing_decision
+            )
+            routing_decision = "search"
 
-    elif any(word in question for word in ["database", "sql", "table", "record", "sales"]):
-        state["selected_agent"] = "sql"
+        state["selected_agent"] = routing_decision
+        trace_msg = f"Supervisor routed query to: {routing_decision} agent"
+        state["agent_trace"] = [trace_msg]
+        logger.info(trace_msg)
 
-    else:
+    except Exception as exc:
+        logger.exception("Failed in supervisor node: %s", exc)
         state["selected_agent"] = "search"
+        state["agent_trace"] = ["Supervisor encountered error; fallback to search agent"]
 
-    print(f"Supervisor selected: {state['selected_agent']} agent")
-
-    return state
+    return state
