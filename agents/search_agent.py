@@ -4,7 +4,10 @@ Retrieves relevant text chunks from Qdrant and uses them to answer queries.
 """
 
 import logging
-from langchain_openai import OpenAIEmbeddings
+try:
+    from langchain_openai import OpenAIEmbeddings
+except ImportError:
+    OpenAIEmbeddings = None  # Fallback if package missing
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 
 from app.core.config import get_settings

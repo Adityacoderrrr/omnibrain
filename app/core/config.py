@@ -1,43 +1,38 @@
 """
-Centralized configuration for the OmniBrain backend.
-Values are loaded from environment variables / a local .env file.
-See .env.example for the full list of supported settings.
+Configuration for OmniBrain backend using standard library only.
 """
-
+import os
+from dataclasses import dataclass
 from functools import lru_cache
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
-class Settings(BaseSettings):
+@dataclass
+class Settings:
     # --- App ---
-    app_env: str = "development"
-    app_host: str = "0.0.0.0"
-    app_port: int = 8000
+    app_env: str = os.getenv("APP_ENV", "development")
+    app_host: str = os.getenv("APP_HOST", "0.0.0.0")
+    app_port: int = int(os.getenv("APP_PORT", "8000"))
 
     # --- Qdrant ---
-    qdrant_url: str = "http://localhost:6333"
-    qdrant_api_key: str | None = None
-    qdrant_text_collection: str = "omnibrain_text"
-    qdrant_image_collection: str = "omnibrain_images"
+    qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
+    qdrant_api_key: str | None = os.getenv("QDRANT_API_KEY")
+    qdrant_text_collection: str = os.getenv("QDRANT_TEXT_COLLECTION", "omnibrain_text")
+    qdrant_image_collection: str = os.getenv("QDRANT_IMAGE_COLLECTION", "omnibrain_images")
 
     # --- LLM / VLM providers ---
-    openai_api_key: str | None = None
+    openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
 
     # --- SQL Agent ---
-    database_url: str | None = None
+    database_url: str | None = os.getenv("DATABASE_URL")
 
     # --- Observability ---
-    langfuse_public_key: str | None = None
-    langfuse_secret_key: str | None = None
-    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_public_key: str | None = os.getenv("LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key: str | None = os.getenv("LANGFUSE_SECRET_KEY")
+    langfuse_host: str = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
 
     # --- Storage ---
-    upload_dir: str = "storage/uploads"
-
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
+    upload_dir: str = os.getenv("UPLOAD_DIR", "storage/uploads")
 
 @lru_cache
 def get_settings() -> Settings:
-    """Cached settings instance so we don't re-parse the environment on every call."""
+    """Cached settings instance."""
     return Settings()

@@ -3,14 +3,18 @@ LLM abstraction and mock fallback layer for OmniBrain agents.
 """
 
 import logging
-from langchain_openai import ChatOpenAI
+from typing import Any
+try:
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    ChatOpenAI = None  # Fallback if package is missing
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.core.config import get_settings
 
 logger = logging.getLogger("omnibrain.agents.llm")
 
 
-def get_llm() -> ChatOpenAI | None:
+def get_llm() -> Any:
     """
     Get the LangChain ChatOpenAI instance if credentials are configured.
     """
