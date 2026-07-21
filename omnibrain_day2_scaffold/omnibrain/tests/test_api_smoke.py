@@ -1,5 +1,5 @@
 """
-Smoke tests for Day 2 scaffolding: app boots and core endpoints respond.
+Smoke tests for Day 2 scaffolding: app boots and core endpoints respond...
 Run with: pytest
 """
 
