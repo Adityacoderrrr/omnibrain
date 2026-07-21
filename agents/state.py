@@ -28,4 +28,19 @@ class AgentState(TypedDict):
     citations: List[Dict[str, Any]]
 
     # Trace of execution steps. Uses operator.add to append entries.
-    agent_trace: Annotated[List[str], operator.add]
+    agent_trace: Annotated[List[str], operator.add]
+from typing import TypedDict, List
+
+
+class AgentState(TypedDict):
+    # User input
+    question: str
+
+    # Retrieved text chunks
+    retrieved_docs: List[str]
+
+    # Agent selected by supervisor
+    selected_agent: str
+
+    # Final response
+    response: str
