@@ -15,7 +15,10 @@ import random
 import uuid
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
-from langchain_openai import OpenAIEmbeddings
+try:
+    from langchain_openai import OpenAIEmbeddings
+except ImportError:
+    OpenAIEmbeddings = None  # Fallback if package missing
 
 from app.core.config import get_settings
 from app.ingestion.chunker import TextChunk
