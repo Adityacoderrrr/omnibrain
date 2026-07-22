@@ -4,7 +4,22 @@ Retrieves and reasons over visual elements (charts, tables) in the ingested docu
 """
 
 import logging
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+
+try:
+    from qdrant_client.models import Filter, FieldCondition, MatchValue, ScoredPoint
+except ImportError:
+    try:
+        from qdrant_client.http.models import Filter, FieldCondition, MatchValue, ScoredPoint
+    except ImportError:
+        Filter = FieldCondition = MatchValue = ScoredPoint = None
+
+if ScoredPoint is None:
+    class ScoredPoint:  # type: ignore
+        def __init__(self, id, version=1, score=0.0, payload=None):
+            self.id = id
+            self.version = version
+            self.score = score
+            self.payload = payload or {}
 
 from app.core.config import get_settings
 from app.ingestion.embedder import get_qdrant_client, _get_mock_embedding
@@ -36,6 +51,8 @@ def vision_agent(state: AgentState) -> AgentState:
 
     if not question:
         state["response"] = "Error: Question is missing."
+        state["retrieved_images"] = []
+        state["citations"] = []
         state["agent_trace"] = ["Vision Agent: Failed - missing question"]
         return state
 
@@ -46,7 +63,7 @@ def vision_agent(state: AgentState) -> AgentState:
 
         # Filter by document_id
         qdrant_filter = None
-        if document_id:
+        if document_id and Filter is not None and FieldCondition is not None and MatchValue is not None:
             qdrant_filter = Filter(
                 must=[
                     FieldCondition(
@@ -69,7 +86,6 @@ def vision_agent(state: AgentState) -> AgentState:
                 "Qdrant connection failed: %s. Falling back to local mock image search results.",
                 qd_exc
             )
-            from qdrant_client.http.models import ScoredPoint
             search_results = [
                 ScoredPoint(
                     id=2,
@@ -88,22 +104,34 @@ def vision_agent(state: AgentState) -> AgentState:
         metadata_snippets = []
 
         for hit in search_results:
-            payload = hit.payload or {}
-            page = payload.get("page_number", 1)
+            payload = getattr(hit, "payload", None)
+            if payload is None and isinstance(hit, dict):
+                payload = hit.get("payload", {})
+            elif payload is None:
+                payload = {}
+
+            raw_page = payload.get("page_number", 1)
+            try:
+                page = int(raw_page)
+            except (ValueError, TypeError):
+                page = 1
             region_type = payload.get("region_type", "chart")
+            score_val = getattr(hit, "score", 0.0)
+            if score_val is None:
+                score_val = 0.0
             
             image_details = {
-                "page_number": int(page),
+                "page_number": page,
                 "region_type": region_type,
-                "score": hit.score
+                "score": score_val
             }
             retrieved_images.append(image_details)
             metadata_snippets.append(f"Visual element ({region_type}) located on page {page}")
             
             citations.append({
-                "page": int(page),
+                "page": page,
                 "source_type": region_type,
-                "snippet": f"Identified {region_type} layout region with score {hit.score:.4f}"
+                "snippet": f"Identified {region_type} layout region with score {score_val:.4f}"
             })
 
         if not retrieved_images:

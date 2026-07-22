@@ -30,10 +30,11 @@ def reducer(state: AgentState) -> AgentState:
         unique_citations = []
         seen = set()
         for cit in state["citations"]:
-            key = (cit.get("page"), cit.get("source_type"), cit.get("snippet"))
-            if key not in seen:
-                seen.add(key)
-                unique_citations.append(cit)
+            if isinstance(cit, dict):
+                key = (cit.get("page"), cit.get("source_type"), cit.get("snippet"))
+                if key not in seen:
+                    seen.add(key)
+                    unique_citations.append(cit)
         state["citations"] = unique_citations
 
         # Append final trace message
