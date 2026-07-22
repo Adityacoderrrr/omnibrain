@@ -26,7 +26,7 @@ def supervisor(state: AgentState) -> AgentState:
         routing_decision = invoke_llm(prompt=question, system_prompt=SUPERVISOR_PROMPT)
 
         # Clean and normalize routing decision
-        routing_decision = routing_decision.strip().lower()
+        routing_decision = (routing_decision or "").strip().lower()
         if routing_decision not in ["vision", "sql", "search"]:
             logger.warning(
                 "Invalid supervisor routing result: '%s'. Falling back to 'search'.",

@@ -4,11 +4,27 @@ Retrieves relevant text chunks from Qdrant and uses them to answer queries.
 """
 
 import logging
+
 try:
     from langchain_openai import OpenAIEmbeddings
 except ImportError:
     OpenAIEmbeddings = None  # Fallback if package missing
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+
+try:
+    from qdrant_client.models import Filter, FieldCondition, MatchValue, ScoredPoint
+except ImportError:
+    try:
+        from qdrant_client.http.models import Filter, FieldCondition, MatchValue, ScoredPoint
+    except ImportError:
+        Filter = FieldCondition = MatchValue = ScoredPoint = None
+
+if ScoredPoint is None:
+    class ScoredPoint:  # type: ignore
+        def __init__(self, id, version=1, score=0.0, payload=None):
+            self.id = id
+            self.version = version
+            self.score = score
+            self.payload = payload or {}
 
 from app.core.config import get_settings
 from app.ingestion.embedder import get_qdrant_client, _get_mock_embedding
@@ -40,6 +56,8 @@ def search_agent(state: AgentState) -> AgentState:
 
     if not question:
         state["response"] = "Error: Question is missing."
+        state["retrieved_docs"] = []
+        state["citations"] = []
         state["agent_trace"] = ["Search Agent: Failed - missing question"]
         return state
 
@@ -48,15 +66,21 @@ def search_agent(state: AgentState) -> AgentState:
         client = get_qdrant_client()
         
         # Determine embedding model
-        if settings.openai_api_key and settings.openai_api_key != "mock-key":
-            embeddings_model = OpenAIEmbeddings(openai_api_key=settings.openai_api_key)
-            query_vector = embeddings_model.embed_query(question)
-        else:
+        query_vector = None
+        if OpenAIEmbeddings is not None and settings.openai_api_key and settings.openai_api_key != "mock-key":
+            try:
+                embeddings_model = OpenAIEmbeddings(openai_api_key=settings.openai_api_key)
+                query_vector = embeddings_model.embed_query(question)
+            except Exception as emb_exc:
+                logger.warning("OpenAIEmbeddings generation failed: %s. Falling back to mock embedding.", emb_exc)
+                query_vector = None
+
+        if query_vector is None:
             query_vector = _get_mock_embedding(question, size=1536)
 
         # Create filter for document_id
         qdrant_filter = None
-        if document_id:
+        if document_id and Filter is not None and FieldCondition is not None and MatchValue is not None:
             qdrant_filter = Filter(
                 must=[
                     FieldCondition(
@@ -79,7 +103,6 @@ def search_agent(state: AgentState) -> AgentState:
                 "Qdrant connection failed: %s. Falling back to local mock search results.",
                 qd_exc
             )
-            from qdrant_client.http.models import ScoredPoint
             search_results = [
                 ScoredPoint(
                     id=1,
@@ -96,13 +119,25 @@ def search_agent(state: AgentState) -> AgentState:
         retrieved_texts = []
         citations = []
         for hit in search_results:
-            payload = hit.payload or {}
+            payload = getattr(hit, "payload", None)
+            if payload is None and isinstance(hit, dict):
+                payload = hit.get("payload", {})
+            elif payload is None:
+                payload = {}
+
             text = payload.get("text", "")
-            page = payload.get("page_number", 1)
+            if not text:
+                continue
+
+            raw_page = payload.get("page_number", 1)
+            try:
+                page = int(raw_page)
+            except (ValueError, TypeError):
+                page = 1
             
             retrieved_texts.append(text)
             citations.append({
-                "page": int(page),
+                "page": page,
                 "source_type": "text",
                 "snippet": text[:200]
             })

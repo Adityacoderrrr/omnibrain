@@ -72,7 +72,8 @@ def sql_agent(state: AgentState) -> AgentState:
         sql_query = invoke_llm(prompt=f"Question: {question}", system_prompt=SQL_AGENT_PROMPT)
         
         # Clean query: strip markdown blocks if LLM output included them
-        sql_query_clean = sql_query.replace("```sql", "").replace("```", "").strip()
+        import re
+        sql_query_clean = re.sub(r"^```(?:sql)?\s*|\s*```$", "", sql_query, flags=re.IGNORECASE).strip()
         logger.info("Generated SQL Query: %s", sql_query_clean)
 
         # Step 2: Establish connection and run query
@@ -85,8 +86,11 @@ def sql_agent(state: AgentState) -> AgentState:
 
         with engine.connect() as conn:
             result = conn.execute(text(sql_query_clean))
-            # Format rows
-            rows = [dict(row._mapping) for row in result]
+            # Format rows safely
+            if getattr(result, "returns_rows", True):
+                rows = [dict(row._mapping) for row in result]
+            else:
+                rows = [{"affected_rows": getattr(result, "rowcount", 0)}]
             sql_result_str = json.dumps(rows, default=str)
             logger.info("SQL Execution success. Retrieved %d rows.", len(rows))
 

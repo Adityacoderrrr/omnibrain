@@ -19,7 +19,7 @@ def get_llm() -> Any:
     Get the LangChain ChatOpenAI instance if credentials are configured.
     """
     settings = get_settings()
-    if settings.openai_api_key and settings.openai_api_key != "mock-key":
+    if ChatOpenAI is not None and settings.openai_api_key and settings.openai_api_key != "mock-key":
         try:
             return ChatOpenAI(
                 openai_api_key=settings.openai_api_key,
@@ -54,7 +54,7 @@ def invoke_llm(prompt: str, system_prompt: str | None = None) -> str:
     sys_prompt_lower = (system_prompt or "").lower()
 
     # 1. Supervisor Routing Mock
-    if "supervisor router" in sys_prompt_lower:
+    if "supervisor" in sys_prompt_lower:
         import re
         if any(re.search(r"\b" + re.escape(word) + r"\b", prompt_lower) for word in ["image", "graph", "chart", "figure", "diagram"]):
             return "vision"
@@ -64,11 +64,11 @@ def invoke_llm(prompt: str, system_prompt: str | None = None) -> str:
             return "search"
 
     # 2. SQL Agent Query Generation Mock
-    if "sql agent" in sys_prompt_lower and "select" in prompt_lower or "generate a valid postgresql compatible sql query" in sys_prompt_lower:
+    if "generate a valid postgresql" in sys_prompt_lower or "text-to-sql" in sys_prompt_lower:
         return "SELECT SUM(revenue) FROM sales_records WHERE region = 'US';"
 
     # 3. SQL Agent Response Summary Mock
-    if "executed sql query and its returned results" in sys_prompt_lower:
+    if "executed sql query" in sys_prompt_lower or "sql results:" in sys_prompt_lower:
         return "According to the historical SQL database records, the total revenue in the US region is $150,000."
 
     # 4. Vision Agent Mock

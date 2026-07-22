@@ -14,7 +14,13 @@ import hashlib
 import random
 import uuid
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams, PointStruct
+try:
+    from qdrant_client.models import Distance, VectorParams, PointStruct
+except ImportError:
+    try:
+        from qdrant_client.http.models import Distance, VectorParams, PointStruct
+    except ImportError:
+        Distance = VectorParams = PointStruct = None  # type: ignore
 try:
     from langchain_openai import OpenAIEmbeddings
 except ImportError:
