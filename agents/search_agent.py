@@ -27,7 +27,7 @@ if ScoredPoint is None:
             self.payload = payload or {}
 
 from app.core.config import get_settings
-from app.ingestion.embedder import get_qdrant_client, _get_mock_embedding
+from app.ingestion.embedder import get_qdrant_client, ensure_collections, _get_mock_embedding
 from .state import AgentState
 from .prompts import SEARCH_AGENT_PROMPT
 from .llm import invoke_llm
@@ -62,6 +62,12 @@ def search_agent(state: AgentState) -> AgentState:
         return state
 
     try:
+        # Ensure collections exist before querying
+        try:
+            ensure_collections()
+        except Exception as init_exc:
+            logger.debug("Qdrant collection bootstrap check skipped/failed: %s", init_exc)
+
         # Initialize client and generate query vector
         client = get_qdrant_client()
         
@@ -100,7 +106,7 @@ def search_agent(state: AgentState) -> AgentState:
             )
         except Exception as qd_exc:
             logger.warning(
-                "Qdrant connection failed: %s. Falling back to local mock search results.",
+                "Qdrant connection failed or collection empty: %s. Falling back to local mock search results.",
                 qd_exc
             )
             search_results = [
@@ -169,4 +175,4 @@ def search_agent(state: AgentState) -> AgentState:
         state["citations"] = []
         state["agent_trace"] = [f"Search Agent error: {str(exc)}"]
 
-    return state
+    return state
