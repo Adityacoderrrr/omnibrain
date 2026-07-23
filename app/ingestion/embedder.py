@@ -5,15 +5,14 @@ Scope (Week 1, Day 4-5): embed TextChunks (text encoder) and table/chart
 regions (CLIP or equivalent) and upsert both into the multi-modal Qdrant
 collections defined in app/core/config.py (QDRANT_TEXT_COLLECTION /
 QDRANT_IMAGE_COLLECTION).
-
-Not yet implemented — scaffolding committed on Day 2. Qdrant client wiring
-below is functional (collection bootstrap); embed/upsert logic lands next.
 """
 
 import hashlib
+import logging
 import random
 import uuid
 from qdrant_client import QdrantClient
+
 try:
     from qdrant_client.models import Distance, VectorParams, PointStruct
 except ImportError:
@@ -21,6 +20,7 @@ except ImportError:
         from qdrant_client.http.models import Distance, VectorParams, PointStruct
     except ImportError:
         Distance = VectorParams = PointStruct = None  # type: ignore
+
 try:
     from langchain_openai import OpenAIEmbeddings
 except ImportError:
@@ -28,10 +28,15 @@ except ImportError:
 
 from app.core.config import get_settings
 from app.ingestion.chunker import TextChunk
+from app.ingestion.pdf_parser import RegionType
+
+logger = logging.getLogger("omnibrain.ingestion.embedder")
 
 
 def get_qdrant_client() -> QdrantClient:
     settings = get_settings()
+    if settings.qdrant_url == ":memory:":
+        return QdrantClient(location=":memory:")
     return QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
 
 
@@ -77,16 +82,18 @@ def embed_and_upsert_text_chunks(chunks: list[TextChunk]) -> None:
     settings = get_settings()
     client = get_qdrant_client()
 
-    # Use OpenAI Embeddings if api key is provided, otherwise fall back to local mock
-    embeddings_model = None
-    if settings.openai_api_key:
-        embeddings_model = OpenAIEmbeddings(openai_api_key=settings.openai_api_key)
+    vectors = None
+    if OpenAIEmbeddings is not None and settings.openai_api_key and settings.openai_api_key != "mock-key":
+        try:
+            embeddings_model = OpenAIEmbeddings(openai_api_key=settings.openai_api_key)
+            texts = [chunk.text for chunk in chunks]
+            vectors = embeddings_model.embed_documents(texts)
+        except Exception as exc:
+            logger.warning("OpenAIEmbeddings generation failed: %s. Falling back to mock embeddings.", exc)
+            vectors = None
 
     texts = [chunk.text for chunk in chunks]
-
-    if embeddings_model:
-        vectors = embeddings_model.embed_documents(texts)
-    else:
+    if vectors is None:
         vectors = [_get_mock_embedding(text, size=1536) for text in texts]
 
     points = []
@@ -116,12 +123,16 @@ def embed_and_upsert_image_regions(document_id: str, regions: list) -> None:
 
     points = []
     for idx, region in enumerate(regions):
-        if getattr(region, "region_type", None) != "chart":
+        raw_type = getattr(region, "region_type", None)
+        region_type_str = str(raw_type.value) if isinstance(raw_type, RegionType) or hasattr(raw_type, "value") else str(raw_type or "")
+        region_type_lower = region_type_str.lower()
+
+        if region_type_lower not in ("chart", "table"):
             continue
 
         page_number = getattr(region, "page_number", 1)
         content = getattr(region, "content", b"")
-        content_bytes = content if isinstance(content, bytes) else b""
+        content_bytes = content if isinstance(content, bytes) else str(content or "").encode("utf-8")
 
         # Basic mock CLIP embedding vector (512-d)
         vector = _get_mock_embedding(content_bytes, size=512)
@@ -133,11 +144,12 @@ def embed_and_upsert_image_regions(document_id: str, regions: list) -> None:
                 payload={
                     "document_id": document_id,
                     "page_number": page_number,
-                    "region_type": "chart",
+                    "region_type": region_type_lower,
                 },
             )
         )
 
     if points:
         client.upsert(collection_name=settings.qdrant_image_collection, points=points)
+
 
