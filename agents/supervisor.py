@@ -44,4 +44,4 @@ def supervisor(state: AgentState) -> AgentState:
         state["selected_agent"] = "search"
         state["agent_trace"] = ["Supervisor encountered error; fallback to search agent"]
 
-    return state
+    return state
