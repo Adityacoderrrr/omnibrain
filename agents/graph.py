@@ -4,7 +4,7 @@ Defines the state graph flow, nodes, and routing transitions.
 """
 
 import logging
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
 
 from .state import AgentState
 from .supervisor import supervisor
@@ -26,8 +26,8 @@ workflow.add_node("vision", vision_agent)
 workflow.add_node("sql", sql_agent)
 workflow.add_node("reducer", reducer)
 
-# Define entry point
-workflow.set_entry_point("supervisor")
+# Define entry point using START
+workflow.add_edge(START, "supervisor")
 
 # Configure conditional edges from supervisor based on router decision
 workflow.add_conditional_edges(
