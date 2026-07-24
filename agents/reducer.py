@@ -45,4 +45,4 @@ def reducer(state: AgentState) -> AgentState:
         logger.exception("Error in reducer node: %s", exc)
         state["agent_trace"] = [f"Reducer error: {str(exc)}"]
 
-    return state
+    return state
