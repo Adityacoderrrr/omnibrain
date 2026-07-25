@@ -11,6 +11,7 @@ except ImportError:
     OpenAIEmbeddings = None  # Fallback if package missing
 
 try:
+    # pyrefly: ignore [missing-import]
     from qdrant_client.models import Filter, FieldCondition, MatchValue, ScoredPoint
 except ImportError:
     try:
