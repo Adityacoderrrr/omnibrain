@@ -15,7 +15,7 @@ logger = get_logger("omnibrain.agents.supervisor")
 VALID_AGENTS = {"vision", "sql", "search"}
 
 
-def supervisor(state: AgentState) -> AgentState:
+def supervisor(state: AgentState) -> Dict[str, Any]:
     """
     Supervisor node:
     - Sanitizes input user question.
@@ -27,7 +27,7 @@ def supervisor(state: AgentState) -> AgentState:
         state (AgentState): Current execution state.
 
     Returns:
-        AgentState: Updated state with supervisor decision.
+        Dict[str, Any]: State update dict with supervisor decision.
     """
     with ExecutionTimer() as timer:
         question = sanitize_prompt_input(state.get("question", ""))
@@ -35,11 +35,20 @@ def supervisor(state: AgentState) -> AgentState:
 
         if not question:
             logger.warning("Empty question provided to supervisor; defaulting to 'search'.")
-            state["selected_agents"] = ["search"]
-            state["selected_agent"] = "search"
-            state["routing_reasoning"] = "Fallback default due to missing user query."
-            state["agent_trace"] = ["Supervisor: Failed - empty question prompt"]
-            return state
+            log_agent_execution(
+                logger=logger,
+                agent_name="supervisor",
+                query="",
+                execution_time_ms=timer.elapsed_ms,
+                status="FALLBACK",
+                extra_metadata={"reason": "empty_question"}
+            )
+            return {
+                "selected_agents": ["search"],
+                "selected_agent": "search",
+                "routing_reasoning": "Fallback default due to missing user query.",
+                "agent_trace": ["Supervisor: Failed - empty question prompt"]
+            }
 
         try:
             # Execute LLM routing call with structured JSON response wrapper
@@ -66,13 +75,7 @@ def supervisor(state: AgentState) -> AgentState:
                 valid_selected = ["search"]
                 reasoning += " (Fallback to search agent due to unparseable decision)."
 
-            # Update State
-            state["selected_agents"] = valid_selected
-            state["selected_agent"] = valid_selected[0]  # Primary legacy field
-            state["routing_reasoning"] = reasoning
-            
             trace_msg = f"Supervisor routed query to agents: {valid_selected} | Reasoning: {reasoning}"
-            state["agent_trace"] = [trace_msg]
             logger.info(trace_msg)
 
             log_agent_execution(
@@ -84,12 +87,16 @@ def supervisor(state: AgentState) -> AgentState:
                 extra_metadata={"selected_agents": valid_selected, "reasoning": reasoning}
             )
 
+            return {
+                "selected_agents": valid_selected,
+                "selected_agent": valid_selected[0],
+                "routing_reasoning": reasoning,
+                "agent_trace": [trace_msg]
+            }
+
         except Exception as exc:
             logger.exception("Failed in supervisor node: %s", exc)
-            state["selected_agents"] = ["search"]
-            state["selected_agent"] = "search"
-            state["routing_reasoning"] = f"Fallback error recovery: {str(exc)}"
-            state["agent_trace"] = [f"Supervisor error fallback: {str(exc)}"]
+            trace_msg = f"Supervisor error fallback: {str(exc)}"
 
             log_agent_execution(
                 logger=logger,
@@ -100,4 +107,9 @@ def supervisor(state: AgentState) -> AgentState:
                 extra_metadata={"error": str(exc)}
             )
 
-    return state
+            return {
+                "selected_agents": ["search"],
+                "selected_agent": "search",
+                "routing_reasoning": f"Fallback error recovery: {str(exc)}",
+                "agent_trace": [trace_msg]
+            }

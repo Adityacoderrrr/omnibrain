@@ -69,7 +69,7 @@ def validate_sql_safety(query: str) -> bool:
     return True
 
 
-def sql_agent(state: AgentState) -> AgentState:
+def sql_agent(state: AgentState) -> Dict[str, Any]:
     """
     SQL Agent node:
     - Generates read-only SQL query from natural language user question.
@@ -81,7 +81,7 @@ def sql_agent(state: AgentState) -> AgentState:
         state (AgentState): Current execution state.
 
     Returns:
-        AgentState: Updated execution state.
+        Dict[str, Any]: Partial state update.
     """
     with ExecutionTimer() as timer:
         question = sanitize_prompt_input(state.get("question", ""))
@@ -90,9 +90,14 @@ def sql_agent(state: AgentState) -> AgentState:
         settings = get_settings()
 
         if not question:
-            state["response"] = "Error: Question is missing."
-            state["agent_trace"] = ["SQL Agent: Failed - missing question"]
-            return state
+            return {
+                "response": "Error: Question is missing.",
+                "sql_query": "",
+                "sql_result": "",
+                "citations": [],
+                "agent_responses": {},
+                "agent_trace": ["SQL Agent: Failed - missing question"]
+            }
 
         try:
             # Step 1: Synthesize SQL Query
@@ -130,24 +135,6 @@ def sql_agent(state: AgentState) -> AgentState:
             )
             answer = invoke_llm(prompt=f"Question: {question}", system_prompt=summary_prompt)
 
-            # Update State
-            agent_responses = state.get("agent_responses") or {}
-            agent_responses["sql"] = answer
-            state["agent_responses"] = agent_responses
-
-            state["sql_query"] = sql_query_clean
-            state["sql_result"] = sql_result_str
-            state["response"] = answer
-            state["citations"] = [{
-                "page": 1,
-                "source_type": "sql",
-                "snippet": f"SQL Query: {sql_query_clean} | Results: {sql_result_str[:200]}"
-            }]
-            state["agent_trace"] = [
-                f"SQL Agent: Generated safe query: {sql_query_clean}",
-                f"SQL Agent: Executed query and formatted response ({len(rows)} records retrieved)"
-            ]
-
             log_agent_execution(
                 logger=logger,
                 agent_name="sql",
@@ -157,14 +144,24 @@ def sql_agent(state: AgentState) -> AgentState:
                 extra_metadata={"rows_retrieved": len(rows), "sql_query": sql_query_clean}
             )
 
+            return {
+                "sql_query": sql_query_clean,
+                "sql_result": sql_result_str,
+                "response": answer,
+                "citations": [{
+                    "page": 1,
+                    "source_type": "sql",
+                    "snippet": f"SQL Query: {sql_query_clean} | Results: {sql_result_str[:200]}"
+                }],
+                "agent_responses": {"sql": answer},
+                "agent_trace": [
+                    f"SQL Agent: Generated safe query: {sql_query_clean}",
+                    f"SQL Agent: Executed query and formatted response ({len(rows)} records retrieved)"
+                ]
+            }
+
         except Exception as exc:
             logger.exception("Error in SQL Agent node: %s", exc)
-            state["response"] = "An error occurred during text-to-SQL query generation or execution."
-            state["sql_query"] = ""
-            state["sql_result"] = ""
-            state["citations"] = []
-            state["agent_trace"] = [f"SQL Agent error: {str(exc)}"]
-
             log_agent_execution(
                 logger=logger,
                 agent_name="sql",
@@ -174,4 +171,11 @@ def sql_agent(state: AgentState) -> AgentState:
                 extra_metadata={"error": str(exc)}
             )
 
-    return state
+            return {
+                "response": "An error occurred during text-to-SQL query generation or execution.",
+                "sql_query": "",
+                "sql_result": "",
+                "citations": [],
+                "agent_responses": {},
+                "agent_trace": [f"SQL Agent error: {str(exc)}"]
+            }

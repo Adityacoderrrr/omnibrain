@@ -31,19 +31,18 @@ if ScoredPoint is None:
 logger = get_logger("omnibrain.agents.vision_agent")
 
 
-def vision_agent(state: AgentState) -> AgentState:
+def vision_agent(state: AgentState) -> Dict[str, Any]:
     """
     Vision Agent node:
-    - Generates 512-d CLIP image embedding vector for visual search.
+    - Generates CLIP image embedding vector for visual search.
     - Queries Qdrant image collection for relevant chart/table layout metadata.
     - Prompts VLM to evaluate visual structures and answer the question.
-    - Updates state retrieved_images, agent_responses['vision'], response, and citations.
 
     Args:
         state (AgentState): Current execution state.
 
     Returns:
-        AgentState: Updated execution state.
+        Dict[str, Any]: Partial state update.
     """
     with ExecutionTimer() as timer:
         question = sanitize_prompt_input(state.get("question", ""))
@@ -53,11 +52,13 @@ def vision_agent(state: AgentState) -> AgentState:
         settings = get_settings()
 
         if not question:
-            state["response"] = "Error: Question is missing."
-            state["retrieved_images"] = []
-            state["citations"] = []
-            state["agent_trace"] = ["Vision Agent: Failed - missing question"]
-            return state
+            return {
+                "response": "Error: Question is missing.",
+                "retrieved_images": [],
+                "citations": [],
+                "agent_responses": {},
+                "agent_trace": ["Vision Agent: Failed - missing question"]
+            }
 
         try:
             client = get_qdrant_client()
@@ -131,19 +132,6 @@ def vision_agent(state: AgentState) -> AgentState:
             system_prompt = VISION_AGENT_PROMPT.format(visual_context=visual_context, question=question)
             answer = invoke_llm(prompt=f"Question: {question}", system_prompt=system_prompt)
 
-            # Update State
-            agent_responses = state.get("agent_responses") or {}
-            agent_responses["vision"] = answer
-            state["agent_responses"] = agent_responses
-
-            state["retrieved_images"] = retrieved_images
-            state["response"] = answer
-            state["citations"] = citations
-            state["agent_trace"] = [
-                f"Vision Agent: Searched Qdrant image collection, retrieved {len(retrieved_images)} regions",
-                "Vision Agent: Generated VLM visual reasoning analysis"
-            ]
-
             log_agent_execution(
                 logger=logger,
                 agent_name="vision",
@@ -153,13 +141,19 @@ def vision_agent(state: AgentState) -> AgentState:
                 extra_metadata={"visual_regions": len(retrieved_images)}
             )
 
+            return {
+                "retrieved_images": retrieved_images,
+                "response": answer,
+                "citations": citations,
+                "agent_responses": {"vision": answer},
+                "agent_trace": [
+                    f"Vision Agent: Searched Qdrant image collection, retrieved {len(retrieved_images)} regions",
+                    "Vision Agent: Generated VLM visual reasoning analysis"
+                ]
+            }
+
         except Exception as exc:
             logger.exception("Error in Vision Agent node: %s", exc)
-            state["response"] = "An error occurred during multi-modal chart visual analysis."
-            state["retrieved_images"] = []
-            state["citations"] = []
-            state["agent_trace"] = [f"Vision Agent error: {str(exc)}"]
-
             log_agent_execution(
                 logger=logger,
                 agent_name="vision",
@@ -169,4 +163,10 @@ def vision_agent(state: AgentState) -> AgentState:
                 extra_metadata={"error": str(exc)}
             )
 
-    return state
+            return {
+                "response": "An error occurred during multi-modal chart visual analysis.",
+                "retrieved_images": [],
+                "citations": [],
+                "agent_responses": {},
+                "agent_trace": [f"Vision Agent error: {str(exc)}"]
+            }
