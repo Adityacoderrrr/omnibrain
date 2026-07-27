@@ -4,7 +4,6 @@ Enterprise Configuration Management Module for OmniBrain.
 Provides centralized, environment-driven configuration with secure key masking,
 type annotations, validation defaults, and cached singleton access.
 """
-
 import os
 from dataclasses import dataclass, field
 from functools import lru_cache
