@@ -63,7 +63,6 @@ def ensure_collections(vector_size_text: int = 1536, vector_size_image: int = 51
             vectors_config=VectorParams(size=vector_size_image, distance=Distance.COSINE),
         )
 
-
 def _get_mock_embedding(text: str | bytes, size: int) -> list[float]:
     """Generates a deterministic unit-normalized vector for testing/local development."""
     input_bytes = text.encode("utf-8") if isinstance(text, str) else text
