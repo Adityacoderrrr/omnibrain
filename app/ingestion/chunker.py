@@ -98,4 +98,3 @@ def chunk_text_regions(document_id: str, regions: list, max_chunk_char_length: i
 
     return chunks
 
-
