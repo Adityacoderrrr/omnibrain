@@ -1,9 +1,11 @@
 """
 LangGraph compilation logic for the OmniBrain agentic pipeline.
-Defines the state graph flow, node registrations, conditional routing edges, and graph compilation.
+Defines the state graph flow, node registrations, conditional routing edges, memory checkpointer, and graph compilation.
 """
 
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
+
 from agents.state import AgentState
 from agents.supervisor import supervisor
 from agents.search_agent import search_agent
@@ -47,6 +49,9 @@ workflow.add_edge("sql", "reducer")
 # Step 6: Direct Reducer to Graph Termination (END)
 workflow.add_edge("reducer", END)
 
-# Step 7: Compile StateGraph Instance
-supervisor_graph = workflow.compile()
-logger.info("Compiled LangGraph supervisor_graph successfully.")
+# Step 7: Initialize In-Memory Checkpointer for Session State Recovery
+checkpointer = MemorySaver()
+
+# Step 8: Compile StateGraph Instance with Checkpointer
+supervisor_graph = workflow.compile(checkpointer=checkpointer)
+logger.info("Compiled LangGraph supervisor_graph with MemorySaver checkpointer successfully.")

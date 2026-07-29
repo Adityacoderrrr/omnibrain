@@ -7,6 +7,7 @@ Run locally with:
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 from app.api.routes import documents, query
 from app.core.config import get_settings
@@ -23,7 +24,7 @@ async def lifespan(app: FastAPI):
         print("[OmniBrain] Qdrant collections bootstrapped.")
     except Exception as exc:
         # Qdrant may not be running locally in all environments; warn but don't crash.
-        print(f"[OmniBrain] Warning: could not reach Qdrant on startup: {exc}")
+        print(f"[OmniBrain] Note: Qdrant service unavailable on startup: {exc}. Fallback local memory search active.")
     yield  # app runs here
 
 
@@ -36,6 +37,19 @@ app = FastAPI(
 
 app.include_router(documents.router)
 app.include_router(query.router)
+
+
+@app.get("/", tags=["root"])
+async def root_index() -> dict:
+    """Root route welcoming users and directing them to docs & frontend UI."""
+    return {
+        "name": "OmniBrain API",
+        "status": "online",
+        "version": "0.1.0",
+        "docs_url": "http://127.0.0.1:8000/docs",
+        "health_check": "http://127.0.0.1:8000/health",
+        "instructions": "To launch the Streamlit Web Interface, run 'streamlit run frontend.py' and visit http://localhost:8501"
+    }
 
 
 @app.get("/health", tags=["health"])

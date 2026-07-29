@@ -1,21 +1,21 @@
 """
 Search Agent component of the OmniBrain AI Intelligence Layer.
-Retrieves relevant text chunks from Qdrant and uses them to answer queries.
+Retrieves relevant text chunks from Qdrant vector database and uses them for semantic RAG synthesis with context compression.
 """
 
 from typing import List, Dict, Any
 from app.core.config import get_settings
-from app.ingestion.embedder import get_qdrant_client, ensure_collections, _get_mock_embedding
+from app.ingestion.embedder import get_qdrant_client, _get_mock_embedding
 from agents.state import AgentState
 from agents.prompts import SEARCH_AGENT_PROMPT
 from agents.llm import invoke_llm
 from agents.logger import get_logger, log_agent_execution
-from agents.utils import ExecutionTimer, sanitize_prompt_input
+from agents.utils import ExecutionTimer, sanitize_prompt_input, estimate_token_count
 
 try:
     from langchain_openai import OpenAIEmbeddings
 except ImportError:
-    OpenAIEmbeddings = None  # Fallback if package missing
+    OpenAIEmbeddings = None
 
 try:
     from qdrant_client.models import Filter, FieldCondition, MatchValue, ScoredPoint
@@ -36,18 +36,44 @@ if ScoredPoint is None:
 logger = get_logger("omnibrain.agents.search_agent")
 
 
-def search_agent(state: AgentState) -> Dict[str, Any]:
+def compress_context_chunks(chunks: List[str], max_tokens: int = 1500) -> str:
+    """
+    Compresses retrieved context text chunks to remain under specified token window limit.
+
+    Args:
+        chunks (List[str]): List of retrieved text chunks.
+        max_tokens (int): Maximum token budget.
+
+    Returns:
+        str: Compressed context payload.
+    """
+    selected: List[str] = []
+    current_tokens = 0
+
+    for chunk in chunks:
+        chunk_tokens = estimate_token_count(chunk)
+        if current_tokens + chunk_tokens > max_tokens:
+            break
+        selected.append(chunk)
+        current_tokens += chunk_tokens
+
+    return "\n\n".join(selected) if selected else (chunks[0][:500] if chunks else "")
+
+
+def search_agent(state: AgentState) -> AgentState:
     """
     Search Agent node:
-    - Generates embeddings for the query.
-    - Queries Qdrant text collection for relevant documents.
-    - Invokes the LLM to generate an answer with citations.
+    - Generates 1536-d text embedding for user question.
+    - Queries Qdrant text collection with optional document_id metadata filter.
+    - Compresses context payload to enforce token budget constraints.
+    - Invokes LLM for text RAG generation.
+    - Updates state retrieved_docs, agent_responses['search'], response, citations, and confidence_scores.
 
     Args:
         state (AgentState): Current execution state.
 
     Returns:
-        Dict[str, Any]: Partial state update.
+        AgentState: Updated execution state.
     """
     with ExecutionTimer() as timer:
         question = sanitize_prompt_input(state.get("question", ""))
@@ -57,25 +83,16 @@ def search_agent(state: AgentState) -> Dict[str, Any]:
         settings = get_settings()
 
         if not question:
-            return {
-                "response": "Error: Question is missing.",
-                "retrieved_docs": [],
-                "citations": [],
-                "agent_responses": {},
-                "agent_trace": ["Search Agent: Failed - missing question"]
-            }
+            state["response"] = "Error: Question is missing."
+            state["retrieved_docs"] = []
+            state["citations"] = []
+            state["agent_trace"] = ["Search Agent: Failed - missing question"]
+            return state
 
         try:
-            # Ensure collections exist before querying
-            try:
-                ensure_collections()
-            except Exception as init_exc:
-                logger.debug("Qdrant collection bootstrap check skipped/failed: %s", init_exc)
-
-            # Initialize client and generate query vector
             client = get_qdrant_client()
             
-            # Determine embedding model
+            # Step 1: Generate Embedding Vector
             query_vector = None
             if OpenAIEmbeddings is not None and settings.openai_api_key and settings.openai_api_key != "mock-key":
                 try:
@@ -88,7 +105,7 @@ def search_agent(state: AgentState) -> Dict[str, Any]:
             if query_vector is None:
                 query_vector = _get_mock_embedding(question, size=settings.embedding_dimension_text)
 
-            # Create filter for document_id
+            # Step 2: Build Filter Criteria
             qdrant_filter = None
             if document_id and Filter is not None and FieldCondition is not None and MatchValue is not None:
                 qdrant_filter = Filter(
@@ -100,7 +117,8 @@ def search_agent(state: AgentState) -> Dict[str, Any]:
                     ]
                 )
 
-            logger.info("Querying Qdrant collection: '%s'", settings.qdrant_text_collection)
+            # Step 3: Perform Qdrant Vector Search
+            logger.info("Querying Qdrant text collection: '%s'", settings.qdrant_text_collection)
             try:
                 search_results = client.search(
                     collection_name=settings.qdrant_text_collection,
@@ -109,10 +127,7 @@ def search_agent(state: AgentState) -> Dict[str, Any]:
                     limit=settings.vector_search_top_k
                 )
             except Exception as qd_exc:
-                logger.warning(
-                    "Qdrant connection failed or collection empty: %s. Falling back to local mock search results.",
-                    qd_exc
-                )
+                logger.warning("Qdrant search failed: %s. Utilizing fallback search payload.", qd_exc)
                 search_results = [
                     ScoredPoint(
                         id=1,
@@ -128,20 +143,15 @@ def search_agent(state: AgentState) -> Dict[str, Any]:
 
             retrieved_texts: List[str] = []
             citations: List[Dict[str, Any]] = []
-            for hit in search_results:
-                payload = getattr(hit, "payload", None)
-                if payload is None and isinstance(hit, dict):
-                    payload = hit.get("payload", {})
-                elif payload is None:
-                    payload = {}
 
+            for hit in search_results:
+                payload = getattr(hit, "payload", None) or (hit.get("payload") if isinstance(hit, dict) else {}) or {}
                 text = payload.get("text", "")
                 if not text:
                     continue
 
-                raw_page = payload.get("page_number", 1)
                 try:
-                    page = int(raw_page)
+                    page = int(payload.get("page_number", 1))
                 except (ValueError, TypeError):
                     page = 1
                 
@@ -152,16 +162,32 @@ def search_agent(state: AgentState) -> Dict[str, Any]:
                     "snippet": text[:200]
                 })
 
-            # Fallback if no docs retrieved
-            if not retrieved_texts:
-                logger.warning("No documents retrieved for document_id: '%s'", document_id)
-                context_str = "No text document context was retrieved from the vector database."
-            else:
-                context_str = "\n\n".join(retrieved_texts)
+            context_str = compress_context_chunks(retrieved_texts, max_tokens=1500) if retrieved_texts else "No document text retrieved."
 
-            # Invoke LLM
+            # Step 4: Invoke RAG LLM
             system_prompt = SEARCH_AGENT_PROMPT.format(context=context_str, question=question)
             answer = invoke_llm(prompt=f"Question: {question}", system_prompt=system_prompt)
+
+            # Update State
+            agent_responses = state.get("agent_responses") or {}
+            agent_responses["search"] = answer
+            state["agent_responses"] = agent_responses
+
+            confidence_map = state.get("confidence_scores") or {}
+            confidence_map["search"] = 0.92 if retrieved_texts else 0.40
+            state["confidence_scores"] = confidence_map
+
+            metrics_map = state.get("execution_metrics") or {}
+            metrics_map["search_ms"] = round(timer.elapsed_ms, 2)
+            state["execution_metrics"] = metrics_map
+
+            state["retrieved_docs"] = retrieved_texts
+            state["response"] = answer
+            state["citations"] = citations
+            state["agent_trace"] = [
+                f"Search Agent: Retrieved {len(retrieved_texts)} text chunks from Qdrant",
+                "Search Agent: Synthesized textual RAG response"
+            ]
 
             log_agent_execution(
                 logger=logger,
@@ -169,22 +195,16 @@ def search_agent(state: AgentState) -> Dict[str, Any]:
                 query=question,
                 execution_time_ms=timer.elapsed_ms,
                 status="SUCCESS",
-                extra_metadata={"text_chunks": len(retrieved_texts)}
+                extra_metadata={"retrieved_chunks": len(retrieved_texts)}
             )
-
-            return {
-                "retrieved_docs": retrieved_texts,
-                "response": answer,
-                "citations": citations,
-                "agent_responses": {"search": answer},
-                "agent_trace": [
-                    f"Search Agent: Retrieved {len(retrieved_texts)} text chunks from vector store",
-                    "Search Agent: Generated response using textual RAG"
-                ]
-            }
 
         except Exception as exc:
             logger.exception("Error in Search Agent node: %s", exc)
+            state["response"] = "An error occurred while performing search-based RAG."
+            state["retrieved_docs"] = []
+            state["citations"] = []
+            state["agent_trace"] = [f"Search Agent error: {str(exc)}"]
+
             log_agent_execution(
                 logger=logger,
                 agent_name="search",
@@ -194,10 +214,4 @@ def search_agent(state: AgentState) -> Dict[str, Any]:
                 extra_metadata={"error": str(exc)}
             )
 
-            return {
-                "response": "An error occurred while performing search-based RAG.",
-                "retrieved_docs": [],
-                "citations": [],
-                "agent_responses": {},
-                "agent_trace": [f"Search Agent error: {str(exc)}"]
-            }
+    return state

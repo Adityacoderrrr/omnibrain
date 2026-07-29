@@ -1,6 +1,6 @@
 """
 Shared State definition for OmniBrain LangGraph agentic orchestrator.
-Defines typing schema for multi-agent parallel execution, routing, citations, and execution telemetry.
+Defines typing schema for multi-agent parallel execution, session history, confidence scoring, citations, and execution telemetry.
 """
 
 from typing import TypedDict, List, Dict, Any, Annotated
@@ -56,9 +56,14 @@ class AgentState(TypedDict, total=False):
     State dictionary maintained across the OmniBrain LangGraph pipeline execution.
     Passed between Supervisor, Router, Specialist Agents, and Reducer.
     """
-    # Core User Request Metadata
+    # Session & Request Identifiers
+    session_id: str
+    request_id: str
+
+    # Core User Request & Multi-Turn History
     question: str
     document_id: str
+    conversation_history: Annotated[List[Dict[str, str]], combine_lists]
 
     # Supervisor & Routing Decision (Supports single or multi-agent selection)
     selected_agent: str  # Primary or legacy agent name for backward compatibility ('search', 'vision', 'sql')
@@ -72,9 +77,14 @@ class AgentState(TypedDict, total=False):
     # SQL Execution State
     sql_query: str
     sql_result: str
+    sql_explanation: str
 
     # Specialist Agent Outputs (Mapped by agent name: 'search', 'vision', 'sql')
     agent_responses: Annotated[Dict[str, str], merge_dicts]
+
+    # Confidence Scores & Execution Metrics
+    confidence_scores: Annotated[Dict[str, float], merge_dicts]
+    execution_metrics: Annotated[Dict[str, float], merge_dicts]
 
     # Final Synthesized Response & Source Attributions
     response: Annotated[str, take_last]

@@ -1,6 +1,6 @@
 """
 Supervisor node of the OmniBrain AI Intelligence Layer.
-Uses LLM-driven structured JSON classification to determine optimal specialist agent assignments.
+Uses LLM-driven structured JSON classification to determine optimal specialist agent assignments and confidence scores.
 """
 
 from typing import List, Dict, Any
@@ -15,19 +15,19 @@ logger = get_logger("omnibrain.agents.supervisor")
 VALID_AGENTS = {"vision", "sql", "search"}
 
 
-def supervisor(state: AgentState) -> Dict[str, Any]:
+def supervisor(state: AgentState) -> AgentState:
     """
     Supervisor node:
     - Sanitizes input user question.
-    - Prompts LLM for structured JSON decision indicating required specialist agents.
+    - Prompts LLM for structured JSON decision indicating required specialist agents and confidence score.
     - Decides between single agent, multiple agents, or fallback search agent.
-    - Updates AgentState with selected_agents list and telemetry trace.
+    - Updates AgentState with selected_agents list, confidence_scores, and telemetry trace.
 
     Args:
         state (AgentState): Current execution state.
 
     Returns:
-        Dict[str, Any]: State update dict with supervisor decision.
+        AgentState: Updated state with supervisor decision.
     """
     with ExecutionTimer() as timer:
         question = sanitize_prompt_input(state.get("question", ""))
@@ -35,20 +35,12 @@ def supervisor(state: AgentState) -> Dict[str, Any]:
 
         if not question:
             logger.warning("Empty question provided to supervisor; defaulting to 'search'.")
-            log_agent_execution(
-                logger=logger,
-                agent_name="supervisor",
-                query="",
-                execution_time_ms=timer.elapsed_ms,
-                status="FALLBACK",
-                extra_metadata={"reason": "empty_question"}
-            )
-            return {
-                "selected_agents": ["search"],
-                "selected_agent": "search",
-                "routing_reasoning": "Fallback default due to missing user query.",
-                "agent_trace": ["Supervisor: Failed - empty question prompt"]
-            }
+            state["selected_agents"] = ["search"]
+            state["selected_agent"] = "search"
+            state["routing_reasoning"] = "Fallback default due to missing user query."
+            state["confidence_scores"] = {"supervisor": 0.0}
+            state["agent_trace"] = ["Supervisor: Failed - empty question prompt"]
+            return state
 
         try:
             # Execute LLM routing call with structured JSON response wrapper
@@ -59,6 +51,11 @@ def supervisor(state: AgentState) -> Dict[str, Any]:
 
             raw_selected = decision_json.get("selected_agents", [])
             reasoning = decision_json.get("reasoning", "LLM routing classification completed.")
+            
+            try:
+                confidence = float(decision_json.get("confidence", 0.90))
+            except (ValueError, TypeError):
+                confidence = 0.90
 
             # Handle case where LLM returns single string instead of list
             if isinstance(raw_selected, str):
@@ -73,9 +70,24 @@ def supervisor(state: AgentState) -> Dict[str, Any]:
             if not valid_selected:
                 logger.warning("No valid specialist agents extracted from decision: %s. Fallback to 'search'.", raw_selected)
                 valid_selected = ["search"]
+                confidence = 0.50
                 reasoning += " (Fallback to search agent due to unparseable decision)."
 
-            trace_msg = f"Supervisor routed query to agents: {valid_selected} | Reasoning: {reasoning}"
+            # Update State
+            state["selected_agents"] = valid_selected
+            state["selected_agent"] = valid_selected[0]  # Primary legacy field
+            state["routing_reasoning"] = reasoning
+            
+            confidence_map = state.get("confidence_scores") or {}
+            confidence_map["supervisor"] = confidence
+            state["confidence_scores"] = confidence_map
+
+            metrics_map = state.get("execution_metrics") or {}
+            metrics_map["supervisor_ms"] = round(timer.elapsed_ms, 2)
+            state["execution_metrics"] = metrics_map
+
+            trace_msg = f"Supervisor routed query to agents: {valid_selected} (Confidence: {confidence:.2f}) | Reasoning: {reasoning}"
+            state["agent_trace"] = [trace_msg]
             logger.info(trace_msg)
 
             log_agent_execution(
@@ -84,19 +96,20 @@ def supervisor(state: AgentState) -> Dict[str, Any]:
                 query=question,
                 execution_time_ms=timer.elapsed_ms,
                 status="SUCCESS",
-                extra_metadata={"selected_agents": valid_selected, "reasoning": reasoning}
+                extra_metadata={"selected_agents": valid_selected, "confidence": confidence, "reasoning": reasoning}
             )
-
-            return {
-                "selected_agents": valid_selected,
-                "selected_agent": valid_selected[0],
-                "routing_reasoning": reasoning,
-                "agent_trace": [trace_msg]
-            }
 
         except Exception as exc:
             logger.exception("Failed in supervisor node: %s", exc)
-            trace_msg = f"Supervisor error fallback: {str(exc)}"
+            state["selected_agents"] = ["search"]
+            state["selected_agent"] = "search"
+            state["routing_reasoning"] = f"Fallback error recovery: {str(exc)}"
+            
+            confidence_map = state.get("confidence_scores") or {}
+            confidence_map["supervisor"] = 0.0
+            state["confidence_scores"] = confidence_map
+
+            state["agent_trace"] = [f"Supervisor error fallback: {str(exc)}"]
 
             log_agent_execution(
                 logger=logger,
@@ -107,9 +120,4 @@ def supervisor(state: AgentState) -> Dict[str, Any]:
                 extra_metadata={"error": str(exc)}
             )
 
-            return {
-                "selected_agents": ["search"],
-                "selected_agent": "search",
-                "routing_reasoning": f"Fallback error recovery: {str(exc)}",
-                "agent_trace": [trace_msg]
-            }
+    return state
