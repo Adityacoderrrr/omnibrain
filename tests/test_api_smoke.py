@@ -1,5 +1,5 @@
 """
-Smoke tests for Day 2 scaffolding: app boots and core endpoints respond.
+Smoke tests for app boots and core endpoints respond.
 Run with: pytest
 """
 
@@ -8,6 +8,13 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+
+
+def test_root_index():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json()["status"] == "online"
+    assert "/docs" in response.json()["docs_url"]
 
 
 def test_health_check():
