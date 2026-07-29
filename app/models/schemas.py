@@ -4,7 +4,6 @@ Shared request/response models for the OmniBrain API.
 
 from datetime import datetime
 from enum import Enum
-
 from pydantic import BaseModel, Field
 
 
@@ -33,6 +32,8 @@ class DocumentStatusResponse(BaseModel):
 class QueryRequest(BaseModel):
     document_id: str = Field(..., description="ID of the ingested document to query against")
     question: str = Field(..., min_length=1, description="Natural language question from the analyst")
+    session_id: str | None = Field(default=None, description="Optional session identifier for multi-turn conversation memory")
+    request_id: str | None = Field(default=None, description="Optional unique request identifier for telemetry tracing")
 
 
 class Citation(BaseModel):
@@ -45,8 +46,12 @@ class QueryResponse(BaseModel):
     document_id: str
     question: str
     answer: str
+    session_id: str | None = None
+    request_id: str | None = None
+    sql_explanation: str | None = None
+    confidence_scores: dict[str, float] = Field(default_factory=dict)
     citations: list[Citation] = []
     agent_trace: list[str] = Field(
         default_factory=list,
-        description="Ordered list of agent/tool steps taken to answer this query (populated once the LangGraph supervisor is wired up in Week 2).",
+        description="Ordered list of agent/tool steps taken to answer this query.",
     )

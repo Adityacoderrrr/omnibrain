@@ -2,7 +2,7 @@
 Centralized Prompt Repository for OmniBrain AI Intelligence Layer.
 
 Decouples prompt engineering logic from Python code execution.
-Provides structured JSON prompt formats and explicit anti-hallucination guidelines.
+Provides structured JSON prompt formats, confidence extraction, and explicit anti-hallucination guidelines.
 """
 
 SUPERVISOR_PROMPT = """You are the Supervisor Router for OmniBrain, an enterprise-grade multi-modal RAG orchestrator.
@@ -15,10 +15,12 @@ Available specialist agents:
 
 CRITICAL INSTRUCTIONS:
 - If the question requires multiple domain capabilities (e.g., comparing visual chart data with database sales figures), select ALL applicable agents.
+- Assign a confidence score between 0.0 and 1.0 reflecting your routing certainty.
 - Respond STRICTLY in valid JSON format matching this schema:
 ```json
 {
   "selected_agents": ["search"],
+  "confidence": 0.95,
   "reasoning": "Brief justification for agent selection"
 }
 ```
@@ -74,13 +76,16 @@ Question: {question}"""
 
 
 SQL_RESPONSE_PROMPT = """You are OmniBrain's SQL Agent.
-Synthesize a concise, clear natural language answer using the executed SQL query results below.
+Synthesize a clear, detailed natural language explanation of the executed SQL query and its returned dataset.
 
 Question: {question}
 SQL Query: {query}
 SQL Execution Results: {results}
 
-Provide a factual summary of the numeric findings and cite the SQL database source."""
+Provide:
+1. A direct answer to the user's question based on the data.
+2. A plain-English explanation of what the SQL query computed.
+3. Cite the SQL database source."""
 
 
 REDUCER_PROMPT = """You are OmniBrain's Master Reducer Agent.

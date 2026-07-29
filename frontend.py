@@ -3,14 +3,14 @@ OmniBrain Streamlit Frontend Application.
 
 Provides a modern, high-performance web dashboard for PDF document upload,
 background status tracking, multi-modal query orchestration, source citation inspection,
-and LangGraph agent execution trace visualization.
+confidence score rendering, and LangGraph agent execution trace visualization.
 
 Run with:
     streamlit run frontend.py
 """
 
 import os
-import time
+import uuid
 import requests
 import streamlit as st
 from typing import Dict, Any, List
@@ -77,6 +77,15 @@ st.markdown("""
         font-size: 0.85rem;
         color: #58a6ff;
     }
+
+    /* Metric Box */
+    .metric-pill {
+        background-color: #1f2937;
+        border: 1px solid #374151;
+        border-radius: 8px;
+        padding: 8px 16px;
+        text-align: center;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -85,6 +94,8 @@ if "active_document_id" not in st.session_state:
     st.session_state["active_document_id"] = None
 if "uploaded_documents" not in st.session_state:
     st.session_state["uploaded_documents"] = {}
+if "session_id" not in st.session_state:
+    st.session_state["session_id"] = f"session_{uuid.uuid4().hex[:8]}"
 
 # --- SIDEBAR CONTROL PANEL ---
 with st.sidebar:
@@ -92,6 +103,8 @@ with st.sidebar:
     st.caption("Enterprise Multi-Modal Agentic Orchestrator")
     
     backend_url = st.text_input("FastAPI Backend URL", value=DEFAULT_BACKEND_URL)
+    session_id_input = st.text_input("Active Session ID", value=st.session_state["session_id"])
+    st.session_state["session_id"] = session_id_input
     
     # Backend Health Check
     try:
@@ -125,7 +138,7 @@ st.markdown("""
         OmniBrain Orchestrator
     </h1>
     <p style="color: #8b949e; font-size: 1.05rem; margin-bottom: 0;">
-        Intelligent multi-agent RAG reasoning across text documents, tabular data, visual chart regions, and relational databases.
+        Intelligent multi-agent RAG reasoning across text documents, tabular data, visual chart regions, and relational databases with MemorySaver session persistence.
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -200,7 +213,7 @@ with col_query:
     if not active_doc_id:
         st.warning("Please upload or select an active document in the sidebar to enable queries.")
     else:
-        st.caption(f"Target Document: `{active_doc_id}`")
+        st.caption(f"Target Document: `{active_doc_id}` | Session: `{st.session_state['session_id']}`")
         
         # Sample Query Templates
         st.markdown("**Quick Query Presets:**")
@@ -224,7 +237,8 @@ with col_query:
                     try:
                         payload = {
                             "document_id": active_doc_id,
-                            "question": question
+                            "question": question,
+                            "session_id": st.session_state["session_id"]
                         }
                         query_resp = requests.post(f"{backend_url}/query", json=payload, timeout=30)
                         
@@ -234,6 +248,19 @@ with col_query:
                             # Display Final Consolidated Answer
                             st.subheader("Consolidated Response")
                             st.markdown(f"```text\n{res_data.get('answer')}\n```")
+
+                            # Display Confidence Metrics
+                            conf_scores = res_data.get("confidence_scores", {})
+                            if conf_scores:
+                                st.subheader("Confidence Telemetry")
+                                conf_cols = st.columns(len(conf_scores))
+                                for idx, (agent_k, score_v) in enumerate(conf_scores.items()):
+                                    conf_cols[idx].metric(label=f"Agent [{agent_k.upper()}]", value=f"{score_v * 100:.0f}%")
+
+                            # Display SQL Explanation if available
+                            sql_expl = res_data.get("sql_explanation")
+                            if sql_expl:
+                                st.info(f"💡 **SQL Explanation**: {sql_expl}")
                             
                             # Display Source Citations
                             st.subheader("Source Citations & Attributions")

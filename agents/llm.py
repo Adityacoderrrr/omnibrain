@@ -85,16 +85,17 @@ def invoke_llm(prompt: str, system_prompt: Optional[str] = None) -> str:
 
         return json.dumps({
             "selected_agents": selected,
-            "reasoning": f"Mock supervisor selected {selected} based on input keywords."
+            "confidence": 0.95,
+            "reasoning": f"Mock supervisor classified query into agents: {selected} with 0.95 confidence."
         })
 
     # 2. Text-to-SQL Mock
     if "text-to-sql" in sys_prompt_lower or "postgresql" in sys_prompt_lower:
         return "SELECT SUM(revenue) FROM sales_records WHERE region = 'US';"
 
-    # 3. SQL Response Summarization Mock
+    # 3. SQL Response Summarization & Explanation Mock
     if "executed sql query" in sys_prompt_lower or "sql execution results:" in sys_prompt_lower:
-        return "According to the historical SQL database records, the total revenue in the US region is $150,000."
+        return "According to the historical SQL database records, the total revenue in the US region is $150,000. This was calculated by summing all revenue entries in the sales_records table where the region equals 'US'."
 
     # 4. Vision Agent Mock
     if "vision agent" in sys_prompt_lower:

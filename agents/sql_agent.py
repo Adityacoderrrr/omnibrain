@@ -1,6 +1,6 @@
 """
 SQL Agent component of the OmniBrain AI Intelligence Layer.
-Translates natural language questions to read-only SQL, executes queries against target database, and synthesizes findings.
+Translates natural language questions to read-only SQL, executes queries against target database, and synthesizes findings with natural language explanations.
 """
 
 import json
@@ -69,19 +69,19 @@ def validate_sql_safety(query: str) -> bool:
     return True
 
 
-def sql_agent(state: AgentState) -> Dict[str, Any]:
+def sql_agent(state: AgentState) -> AgentState:
     """
     SQL Agent node:
     - Generates read-only SQL query from natural language user question.
     - Validates safety to block destructive DDL/DML operations.
     - Executes query on database URL or fallback in-memory SQLite engine.
-    - Summarizes dataset results and updates AgentState.
+    - Summarizes dataset results with natural language explanations and updates AgentState.
 
     Args:
         state (AgentState): Current execution state.
 
     Returns:
-        Dict[str, Any]: Partial state update.
+        AgentState: Updated execution state.
     """
     with ExecutionTimer() as timer:
         question = sanitize_prompt_input(state.get("question", ""))
@@ -90,14 +90,9 @@ def sql_agent(state: AgentState) -> Dict[str, Any]:
         settings = get_settings()
 
         if not question:
-            return {
-                "response": "Error: Question is missing.",
-                "sql_query": "",
-                "sql_result": "",
-                "citations": [],
-                "agent_responses": {},
-                "agent_trace": ["SQL Agent: Failed - missing question"]
-            }
+            state["response"] = "Error: Question is missing."
+            state["agent_trace"] = ["SQL Agent: Failed - missing question"]
+            return state
 
         try:
             # Step 1: Synthesize SQL Query
@@ -127,13 +122,42 @@ def sql_agent(state: AgentState) -> Dict[str, Any]:
                 sql_result_str = json.dumps(rows, default=str)
                 logger.info("SQL Execution success. Retrieved %d rows.", len(rows))
 
-            # Step 4: Summarize Results via LLM
+            # Step 4: Summarize Results & Synthesize Plain-English Explanation via LLM
             summary_prompt = SQL_RESPONSE_PROMPT.format(
                 question=question,
                 query=sql_query_clean,
                 results=sql_result_str
             )
             answer = invoke_llm(prompt=f"Question: {question}", system_prompt=summary_prompt)
+
+            sql_explanation = f"SQL Query `{sql_query_clean}` executed successfully against relational database. Retrieved {len(rows)} matching record(s)."
+
+            # Update State
+            agent_responses = state.get("agent_responses") or {}
+            agent_responses["sql"] = answer
+            state["agent_responses"] = agent_responses
+
+            confidence_map = state.get("confidence_scores") or {}
+            confidence_map["sql"] = 0.98 if rows else 0.50
+            state["confidence_scores"] = confidence_map
+
+            metrics_map = state.get("execution_metrics") or {}
+            metrics_map["sql_ms"] = round(timer.elapsed_ms, 2)
+            state["execution_metrics"] = metrics_map
+
+            state["sql_query"] = sql_query_clean
+            state["sql_result"] = sql_result_str
+            state["sql_explanation"] = sql_explanation
+            state["response"] = answer
+            state["citations"] = [{
+                "page": 1,
+                "source_type": "sql",
+                "snippet": f"SQL Query: {sql_query_clean} | Results: {sql_result_str[:200]}"
+            }]
+            state["agent_trace"] = [
+                f"SQL Agent: Generated safe query: {sql_query_clean}",
+                f"SQL Agent: Executed query and formatted response ({len(rows)} records retrieved)"
+            ]
 
             log_agent_execution(
                 logger=logger,
@@ -144,24 +168,15 @@ def sql_agent(state: AgentState) -> Dict[str, Any]:
                 extra_metadata={"rows_retrieved": len(rows), "sql_query": sql_query_clean}
             )
 
-            return {
-                "sql_query": sql_query_clean,
-                "sql_result": sql_result_str,
-                "response": answer,
-                "citations": [{
-                    "page": 1,
-                    "source_type": "sql",
-                    "snippet": f"SQL Query: {sql_query_clean} | Results: {sql_result_str[:200]}"
-                }],
-                "agent_responses": {"sql": answer},
-                "agent_trace": [
-                    f"SQL Agent: Generated safe query: {sql_query_clean}",
-                    f"SQL Agent: Executed query and formatted response ({len(rows)} records retrieved)"
-                ]
-            }
-
         except Exception as exc:
             logger.exception("Error in SQL Agent node: %s", exc)
+            state["response"] = "An error occurred during text-to-SQL query generation or execution."
+            state["sql_query"] = ""
+            state["sql_result"] = ""
+            state["sql_explanation"] = f"SQL execution error: {str(exc)}"
+            state["citations"] = []
+            state["agent_trace"] = [f"SQL Agent error: {str(exc)}"]
+
             log_agent_execution(
                 logger=logger,
                 agent_name="sql",
@@ -171,11 +186,4 @@ def sql_agent(state: AgentState) -> Dict[str, Any]:
                 extra_metadata={"error": str(exc)}
             )
 
-            return {
-                "response": "An error occurred during text-to-SQL query generation or execution.",
-                "sql_query": "",
-                "sql_result": "",
-                "citations": [],
-                "agent_responses": {},
-                "agent_trace": [f"SQL Agent error: {str(exc)}"]
-            }
+    return state
