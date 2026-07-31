@@ -57,27 +57,27 @@ class AgentState(TypedDict, total=False):
     Passed between Supervisor, Router, Specialist Agents, and Reducer.
     """
     # Session & Request Identifiers
-    session_id: str
-    request_id: str
+    session_id: Annotated[str, take_last]
+    request_id: Annotated[str, take_last]
 
     # Core User Request & Multi-Turn History
-    question: str
-    document_id: str
+    question: Annotated[str, take_last]
+    document_id: Annotated[str, take_last]
     conversation_history: Annotated[List[Dict[str, str]], combine_lists]
 
     # Supervisor & Routing Decision (Supports single or multi-agent selection)
-    selected_agent: str  # Primary or legacy agent name for backward compatibility ('search', 'vision', 'sql')
-    selected_agents: List[str]  # List of specialist agents to execute in parallel
-    routing_reasoning: str  # Structured explanation from Supervisor LLM
+    selected_agent: Annotated[str, take_last]  # Primary or legacy agent name for backward compatibility ('search', 'vision', 'sql')
+    selected_agents: Annotated[List[str], combine_lists]  # List of specialist agents to execute in parallel
+    routing_reasoning: Annotated[str, take_last]  # Structured explanation from Supervisor LLM
 
     # Retrieved Context Artifacts
     retrieved_docs: Annotated[List[str], combine_lists]
     retrieved_images: Annotated[List[Dict[str, Any]], combine_lists]
 
     # SQL Execution State
-    sql_query: str
-    sql_result: str
-    sql_explanation: str
+    sql_query: Annotated[str, take_last]
+    sql_result: Annotated[str, take_last]
+    sql_explanation: Annotated[str, take_last]
 
     # Specialist Agent Outputs (Mapped by agent name: 'search', 'vision', 'sql')
     agent_responses: Annotated[Dict[str, str], merge_dicts]
