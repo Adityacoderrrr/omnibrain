@@ -22,7 +22,8 @@ async def run_test(scenario_name: str, question: str):
         "agent_trace": []
     }
     
-    final_state = await supervisor_graph.ainvoke(state)
+    config = {"configurable": {"thread_id": f"test_{scenario_name.replace(' ', '_')}"}}
+    final_state = await supervisor_graph.ainvoke(state, config=config)
     
     print(f"Selected Agent: {final_state.get('selected_agent')}")
     print(f"SQL Query:      {final_state.get('sql_query')}")
