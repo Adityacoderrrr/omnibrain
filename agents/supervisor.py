@@ -88,7 +88,27 @@ def supervisor(state: AgentState) -> AgentState:
 
             trace_msg = f"Supervisor routed query to agents: {valid_selected} (Confidence: {confidence:.2f}) | Reasoning: {reasoning}"
             state["agent_trace"] = [trace_msg]
+
+            # Populate Rich Observability Telemetry
+            trace_details_map = state.get("trace_details") or {}
+            intent_label = "Policy / Document Question" if "search" in valid_selected else ("Database Analytics" if "sql" in valid_selected else "Visual Document Analysis")
+            domain_label = "Human Resources & Enterprise Knowledge" if "search" in valid_selected else ("Finance & Sales DB" if "sql" in valid_selected else "Visual Charts & Diagrams")
+            
+            trace_details_map["supervisor"] = {
+                "user_query": question,
+                "intent": intent_label,
+                "domain": domain_label,
+                "selected_agents": valid_selected,
+                "reasoning": reasoning,
+                "keywords": [w for w in question.split() if len(w) > 3][:5],
+                "alternative_agents": [ag for ag in ["search", "vision", "sql"] if ag not in valid_selected],
+                "confidence": confidence,
+                "execution_time_ms": round(timer.elapsed_ms, 2)
+            }
+            state["trace_details"] = trace_details_map
+
             logger.info(trace_msg)
+
 
             log_agent_execution(
                 logger=logger,
