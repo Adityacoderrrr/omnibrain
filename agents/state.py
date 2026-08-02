@@ -93,3 +93,6 @@ class AgentState(TypedDict, total=False):
     # Execution Trace Telemetry & Error Tracking (Appended atomically using operator.add)
     agent_trace: Annotated[List[str], operator.add]
     errors: Annotated[List[str], operator.add]
+    trace_details: Annotated[Dict[str, Any], merge_dicts]
+    token_analytics: Annotated[Dict[str, int], merge_dicts]
+

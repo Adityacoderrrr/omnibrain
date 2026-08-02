@@ -50,8 +50,11 @@ class QueryResponse(BaseModel):
     request_id: str | None = None
     sql_explanation: str | None = None
     confidence_scores: dict[str, float] = Field(default_factory=dict)
-    citations: list[Citation] = []
+    citations: list[dict] = []
     agent_trace: list[str] = Field(
         default_factory=list,
         description="Ordered list of agent/tool steps taken to answer this query.",
     )
+    trace_details: dict = Field(default_factory=dict, description="Structured observability trace dictionary per agent node")
+    token_analytics: dict = Field(default_factory=dict, description="Prompt, completion, and total token usage metrics")
+

@@ -75,6 +75,9 @@ async def query_document(request: QueryRequest) -> QueryResponse:
         request_id=request_id,
         sql_explanation=result.get("sql_explanation"),
         confidence_scores=result.get("confidence_scores", {}),
-        citations=formatted_citations,
+        citations=result.get("citations", []),
         agent_trace=result.get("agent_trace", []),
+        trace_details=result.get("trace_details", {}),
+        token_analytics=result.get("token_analytics", {}),
     )
+

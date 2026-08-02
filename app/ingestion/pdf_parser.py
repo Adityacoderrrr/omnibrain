@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 import pypdf
+import pdfplumber
 
 class RegionType(str, Enum):
     TEXT = "text"
@@ -35,38 +36,175 @@ def parse_pdf(pdf_path: Path) -> list[PageRegion]:
     """
     Parse a PDF into classified page regions.
     Extracts text page-by-page and grabs any embedded images as CHART regions.
+    Includes validation for empty files, encrypted PDFs, and corrupted pages.
+    """
+    if not pdf_path.exists():
+        raise FileNotFoundError(f"PDF file not found at {pdf_path}")
+
+    try:
+        if pdf_path.stat().st_size == 0:
+            raise ValueError("Uploaded PDF file is empty (0 bytes).")
+    except (OSError, FileNotFoundError):
+        pass
+
+
+    regions: list[PageRegion] = []
+    try:
+        reader = pypdf.PdfReader(pdf_path)
+    except Exception as exc:
+        raise ValueError(f"Corrupted or invalid PDF file structure: {exc}")
+
+    if getattr(reader, "is_encrypted", False):
+        try:
+            reader.decrypt("")
+        except Exception:
+            raise ValueError("PDF file is encrypted and requires a password.")
+
+    for idx, page in enumerate(reader.pages):
+        page_number = idx + 1
+        try:
+            text = page.extract_text() or ""
+            if text.strip():
+                regions.append(
+                    PageRegion(
+                        page_number=page_number,
+                        region_type=RegionType.TEXT,
+                        content=text.strip(),
+                    )
+                )
+
+            # Extract embedded images / charts
+            if hasattr(page, "images") and page.images:
+                for img in page.images:
+                    if hasattr(img, "data") and img.data:
+                        regions.append(
+                            PageRegion(
+                                page_number=page_number,
+                                region_type=RegionType.CHART,
+                                content=img.data,
+                            )
+                        )
+        except Exception:
+            # Skip corrupted page silently without failing whole file
+            continue
+
+    return regions
+
+
+
+def _serialize_table(rows: list[list[str | None]]) -> str:
+    """
+    Turn a pdfplumber table (list of rows, each a list of cell strings) into a
+    simple pipe-delimited string so it can be stored in PageRegion.content
+    without destroying the row/column structure.
+    """
+    lines = []
+    for row in rows:
+        cells = [cell.strip() if cell else "" for cell in row]
+        lines.append(" | ".join(cells))
+    return "\n".join(lines)
+
+
+def detect_tables(pdf_path: Path, page_number: int) -> list[PageRegion]:
+    """
+    Detect and extract table regions from a single PDF page using pdfplumber.
     """
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF file not found at {pdf_path}")
 
     regions: list[PageRegion] = []
-    reader = pypdf.PdfReader(pdf_path)
 
-    for idx, page in enumerate(reader.pages):
-        page_number = idx + 1
-        text = page.extract_text() or ""
-        if text.strip():
+    with pdfplumber.open(pdf_path) as pdf:
+        if page_number < 1 or page_number > len(pdf.pages):
+            return regions
+
+        page = pdf.pages[page_number - 1]
+        tables = page.find_tables()
+        for table in tables:
+            rows = table.extract()
+            if not rows or not any(any(cell for cell in row) for row in rows):
+                continue
+
             regions.append(
                 PageRegion(
                     page_number=page_number,
-                    region_type=RegionType.TEXT,
-                    content=text.strip(),
+                    region_type=RegionType.TABLE,
+                    bounding_box=table.bbox,
+                    content=_serialize_table(rows),
                 )
             )
-
-        # Basic multi-modal support: extract images on the page
-        try:
-            if hasattr(page, "images") and page.images:
-                for img in page.images:
-                    regions.append(
-                        PageRegion(
-                            page_number=page_number,
-                            region_type=RegionType.CHART,
-                            content=img.data,
-                        )
-                    )
-        except Exception:
-            pass
-
     return regions
+
+
+
+def parse_text_file(file_path: Path) -> list[PageRegion]:
+    """Parse text (.txt) file into page regions."""
+    content = file_path.read_text(encoding="utf-8", errors="ignore")
+    if not content.strip():
+        return []
+    return [PageRegion(page_number=1, region_type=RegionType.TEXT, content=content.strip())]
+
+
+def parse_markdown_file(file_path: Path) -> list[PageRegion]:
+    """Parse markdown (.md) file into page regions."""
+    content = file_path.read_text(encoding="utf-8", errors="ignore")
+    if not content.strip():
+        return []
+    return [PageRegion(page_number=1, region_type=RegionType.TEXT, content=content.strip())]
+
+
+
+def parse_docx_file(file_path: Path) -> list[PageRegion]:
+    """Parse Word (.docx) file into page regions."""
+    try:
+        import docx
+        doc = docx.Document(file_path)
+        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+        content = "\n\n".join(paragraphs)
+        if not content.strip():
+            return []
+        return [PageRegion(page_number=1, region_type=RegionType.TEXT, content=content)]
+    except Exception:
+        # Fallback reading
+        return parse_text_file(file_path)
+
+
+def parse_pptx_file(file_path: Path) -> list[PageRegion]:
+    """Parse PowerPoint (.pptx) file into page regions (one per slide)."""
+    try:
+        import pptx
+        prs = pptx.Presentation(file_path)
+        regions = []
+        for idx, slide in enumerate(prs.slides):
+            slide_texts = []
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    slide_texts.append(shape.text.strip())
+            if slide_texts:
+                regions.append(
+                    PageRegion(page_number=idx + 1, region_type=RegionType.TEXT, content="\n".join(slide_texts))
+                )
+        return regions
+    except Exception:
+        return parse_text_file(file_path)
+
+
+def parse_document(file_path: Path) -> list[PageRegion]:
+    """
+    Universal multi-format document parser.
+    Routes to specific extractor based on file extension (.pdf, .docx, .pptx, .md, .txt).
+    """
+    suffix = file_path.suffix.lower()
+    if suffix == ".pdf":
+        return parse_pdf(file_path)
+    elif suffix in (".docx", ".doc"):
+        return parse_docx_file(file_path)
+    elif suffix in (".pptx", ".ppt"):
+        return parse_pptx_file(file_path)
+    elif suffix in (".md", ".markdown"):
+        return parse_markdown_file(file_path)
+    else:
+        return parse_text_file(file_path)
+
+
 

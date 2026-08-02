@@ -99,6 +99,18 @@ def reducer(state: AgentState) -> AgentState:
             state["citations"] = unique_citations
             state["agent_trace"] = ["Reducer: Consolidated final response and deduplicated citations"]
 
+            trace_details_map = state.get("trace_details") or {}
+            trace_details_map["reducer"] = {
+                "inputs": list(agent_responses.keys()) if agent_responses else ["search"],
+                "conflict_detection": "None",
+                "duplicate_removal": "Not Required",
+                "final_response": state.get("response", ""),
+                "confidence": avg_confidence,
+                "execution_time_ms": round(timer.elapsed_ms, 2)
+            }
+            state["trace_details"] = trace_details_map
+
+
             log_agent_execution(
                 logger=logger,
                 agent_name="reducer",

@@ -73,7 +73,7 @@ def _get_mock_embedding(text: str | bytes, size: int) -> list[float]:
     return [x / magnitude for x in vector] if magnitude > 0 else vector
 
 
-def embed_and_upsert_text_chunks(chunks: list[TextChunk]) -> None:
+def embed_and_upsert_text_chunks(chunks: list[TextChunk], filename: str = "") -> None:
     """Embed TextChunks and upsert them into the text collection."""
     if not chunks:
         return
@@ -103,6 +103,7 @@ def embed_and_upsert_text_chunks(chunks: list[TextChunk]) -> None:
                 vector=vector,
                 payload={
                     "document_id": chunk.document_id,
+                    "filename": filename or chunk.document_id,
                     "page_number": chunk.page_number,
                     "text": chunk.text,
                 },
@@ -112,7 +113,7 @@ def embed_and_upsert_text_chunks(chunks: list[TextChunk]) -> None:
     client.upsert(collection_name=settings.qdrant_text_collection, points=points)
 
 
-def embed_and_upsert_image_regions(document_id: str, regions: list) -> None:
+def embed_and_upsert_image_regions(document_id: str, regions: list, filename: str = "") -> None:
     """Embed table/chart regions via CLIP (or local mock) and upsert into the image collection."""
     if not regions:
         return
@@ -142,6 +143,7 @@ def embed_and_upsert_image_regions(document_id: str, regions: list) -> None:
                 vector=vector,
                 payload={
                     "document_id": document_id,
+                    "filename": filename or document_id,
                     "page_number": page_number,
                     "region_type": region_type_lower,
                 },
@@ -150,5 +152,27 @@ def embed_and_upsert_image_regions(document_id: str, regions: list) -> None:
 
     if points:
         client.upsert(collection_name=settings.qdrant_image_collection, points=points)
+
+
+def delete_document_vectors(document_id: str) -> None:
+    """Deletes all text and image vectors associated with document_id from Qdrant."""
+    settings = get_settings()
+    client = get_qdrant_client()
+    try:
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        doc_filter = Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))])
+        
+        try:
+            client.delete(collection_name=settings.qdrant_text_collection, points_selector=doc_filter)
+        except Exception as e:
+            logger.warning("Error deleting text vectors for document %s: %s", document_id, e)
+
+        try:
+            client.delete(collection_name=settings.qdrant_image_collection, points_selector=doc_filter)
+        except Exception as e:
+            logger.warning("Error deleting image vectors for document %s: %s", document_id, e)
+    except Exception as exc:
+        logger.error("Failed to delete vectors for document %s: %s", document_id, exc)
+
 
 

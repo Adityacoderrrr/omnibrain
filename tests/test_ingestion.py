@@ -76,3 +76,30 @@ def test_indexing_pipeline():
         assert len(points) == 1
         assert points[0].payload["text"] == "Some test content to index."
         assert points[0].payload["document_id"] == "doc-123"
+
+
+def test_detect_tables():
+    from app.ingestion.pdf_parser import detect_tables, _serialize_table
+    
+    rows = [["Header 1", "Header 2"], ["Val 1", "Val 2"]]
+    serialized = _serialize_table(rows)
+    assert serialized == "Header 1 | Header 2\nVal 1 | Val 2"
+
+    pdf_path = Path("fake_table_doc.pdf")
+    with patch("pathlib.Path.exists") as mock_exists:
+        mock_exists.return_value = True
+        with patch("pdfplumber.open") as mock_pdfplumber:
+            mock_page = MagicMock()
+            mock_table = MagicMock()
+            mock_table.extract.return_value = rows
+            mock_table.bbox = (0, 0, 100, 100)
+            mock_page.find_tables.return_value = [mock_table]
+            mock_pdf = MagicMock()
+            mock_pdf.pages = [mock_page]
+            mock_pdfplumber.return_value.__enter__.return_value = mock_pdf
+
+            regions = detect_tables(pdf_path, page_number=1)
+            assert len(regions) == 1
+            assert regions[0].region_type == RegionType.TABLE
+            assert "Header 1 | Header 2" in regions[0].content
+
