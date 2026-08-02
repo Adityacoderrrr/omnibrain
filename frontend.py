@@ -121,16 +121,44 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("📄 Document Inventory")
     
+    # Sync with backend list endpoint
+    try:
+        list_resp = requests.get(f"{backend_url}/documents", timeout=3)
+        if list_resp.status_code == 200:
+            remote_docs = list_resp.json().get("documents", [])
+            for rdoc in remote_docs:
+                did = rdoc["document_id"]
+                if did not in st.session_state["uploaded_documents"]:
+                    st.session_state["uploaded_documents"][did] = rdoc
+                else:
+                    st.session_state["uploaded_documents"][did].update(rdoc)
+    except Exception:
+        pass
+
     if st.session_state["uploaded_documents"]:
         doc_options = list(st.session_state["uploaded_documents"].keys())
         selected_doc = st.selectbox(
-            "Select Active Document ID",
+            "Select Active Document",
             options=doc_options,
-            format_func=lambda d: f"{st.session_state['uploaded_documents'][d]['filename']} ({d[:8]}...)"
+            format_func=lambda d: f"{st.session_state['uploaded_documents'][d].get('filename', d)} ({d[:8]}...)"
         )
         st.session_state["active_document_id"] = selected_doc
+
+        if st.button("🗑️ Delete Selected Document", use_container_width=True):
+            try:
+                del_resp = requests.delete(f"{backend_url}/documents/{selected_doc}", timeout=5)
+                if del_resp.status_code == 200:
+                    st.session_state["uploaded_documents"].pop(selected_doc, None)
+                    st.session_state["active_document_id"] = None
+                    st.success(f"Document `{selected_doc[:8]}` deleted!")
+                    st.rerun()
+                else:
+                    st.error(f"Delete failed: {del_resp.text}")
+            except Exception as exc:
+                st.error(f"Delete error: {exc}")
     else:
         st.info("No documents uploaded yet.")
+
 
 # --- MAIN DASHBOARD HEADER ---
 st.markdown("""

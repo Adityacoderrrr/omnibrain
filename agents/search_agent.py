@@ -150,17 +150,20 @@ def search_agent(state: AgentState) -> AgentState:
                 if not text:
                     continue
 
+                filename = payload.get("filename", payload.get("document_id", "Document"))
                 try:
                     page = int(payload.get("page_number", 1))
                 except (ValueError, TypeError):
                     page = 1
                 
-                retrieved_texts.append(text)
+                retrieved_texts.append(f"[Source: {filename} | Page {page}]\n{text}")
                 citations.append({
+                    "document_name": filename,
                     "page": page,
                     "source_type": "text",
                     "snippet": text[:200]
                 })
+
 
             context_str = compress_context_chunks(retrieved_texts, max_tokens=1500) if retrieved_texts else "No document text retrieved."
 

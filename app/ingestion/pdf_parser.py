@@ -36,40 +36,60 @@ def parse_pdf(pdf_path: Path) -> list[PageRegion]:
     """
     Parse a PDF into classified page regions.
     Extracts text page-by-page and grabs any embedded images as CHART regions.
+    Includes validation for empty files, encrypted PDFs, and corrupted pages.
     """
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF file not found at {pdf_path}")
 
+    try:
+        if pdf_path.stat().st_size == 0:
+            raise ValueError("Uploaded PDF file is empty (0 bytes).")
+    except (OSError, FileNotFoundError):
+        pass
+
+
     regions: list[PageRegion] = []
-    reader = pypdf.PdfReader(pdf_path)
+    try:
+        reader = pypdf.PdfReader(pdf_path)
+    except Exception as exc:
+        raise ValueError(f"Corrupted or invalid PDF file structure: {exc}")
+
+    if getattr(reader, "is_encrypted", False):
+        try:
+            reader.decrypt("")
+        except Exception:
+            raise ValueError("PDF file is encrypted and requires a password.")
 
     for idx, page in enumerate(reader.pages):
         page_number = idx + 1
-        text = page.extract_text() or ""
-        if text.strip():
-            regions.append(
-                PageRegion(
-                    page_number=page_number,
-                    region_type=RegionType.TEXT,
-                    content=text.strip(),
-                )
-            )
-
-        # Basic multi-modal support: extract images on the page
         try:
+            text = page.extract_text() or ""
+            if text.strip():
+                regions.append(
+                    PageRegion(
+                        page_number=page_number,
+                        region_type=RegionType.TEXT,
+                        content=text.strip(),
+                    )
+                )
+
+            # Extract embedded images / charts
             if hasattr(page, "images") and page.images:
                 for img in page.images:
-                    regions.append(
-                        PageRegion(
-                            page_number=page_number,
-                            region_type=RegionType.CHART,
-                            content=img.data,
+                    if hasattr(img, "data") and img.data:
+                        regions.append(
+                            PageRegion(
+                                page_number=page_number,
+                                region_type=RegionType.CHART,
+                                content=img.data,
+                            )
                         )
-                    )
         except Exception:
-            pass
+            # Skip corrupted page silently without failing whole file
+            continue
 
     return regions
+
 
 
 def _serialize_table(rows: list[list[str | None]]) -> str:
