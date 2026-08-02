@@ -61,33 +61,36 @@ st.markdown("""
     .citation-box {
         background-color: #161b22;
         border-left: 4px solid #3b82f6;
-        border-radius: 4px;
-        padding: 12px 16px;
-        margin-bottom: 8px;
+        border-radius: 6px;
+        padding: 14px 18px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
 
     /* Trace Pill */
     .trace-step {
-        background-color: #21262d;
+        background-color: #161b22;
         border: 1px solid #30363d;
-        border-radius: 6px;
-        padding: 8px 12px;
-        margin-bottom: 6px;
-        font-family: monospace;
-        font-size: 0.85rem;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 10px;
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 0.92rem;
         color: #58a6ff;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     }
 
     /* Metric Box */
     .metric-pill {
-        background-color: #1f2937;
-        border: 1px solid #374151;
+        background-color: #161b22;
+        border: 1px solid #30363d;
         border-radius: 8px;
-        padding: 8px 16px;
+        padding: 12px 18px;
         text-align: center;
     }
 </style>
 """, unsafe_allow_html=True)
+
 
 # Session State Initialization
 if "active_document_id" not in st.session_state:
