@@ -26,9 +26,10 @@ def test_health_check():
 def test_upload_rejects_non_pdf():
     response = client.post(
         "/documents/upload",
-        files={"file": ("notes.txt", b"hello world", "text/plain")},
+        files={"file": ("notes.exe", b"hello world", "application/x-msdownload")},
     )
     assert response.status_code == 415
+
 
 
 def test_query_unknown_document_returns_404():

@@ -54,3 +54,23 @@ def test_delete_document_vectors_mock():
         mock_get_client.return_value = mock_qdrant
         delete_document_vectors("doc-xyz-123")
         assert mock_qdrant.delete.call_count >= 1
+
+
+def test_multi_format_parsing(tmp_path):
+    from app.ingestion.pdf_parser import parse_document, RegionType
+    
+    # 1. Text file
+    txt_file = tmp_path / "sample.txt"
+    txt_file.write_text("This is sample text content for RAG testing.", encoding="utf-8")
+    regions = parse_document(txt_file)
+    assert len(regions) == 1
+    assert regions[0].region_type == RegionType.TEXT
+    assert "sample text content" in regions[0].content
+
+    # 2. Markdown file
+    md_file = tmp_path / "sample.md"
+    md_file.write_text("# Title\n\nMarkdown paragraph text.", encoding="utf-8")
+    md_regions = parse_document(md_file)
+    assert len(md_regions) == 1
+    assert "Markdown paragraph text" in md_regions[0].content
+

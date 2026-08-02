@@ -20,19 +20,26 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 # In-memory registry — replaced by a real DB once needed.
 _DOCUMENT_REGISTRY: dict[str, dict] = {}
 
-ALLOWED_CONTENT_TYPES = {"application/pdf"}
+ALLOWED_CONTENT_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/markdown",
+    "text/plain",
+    "application/octet-stream",
+}
 
 
-def _run_ingestion(document_id: str, pdf_path: Path) -> None:
+def _run_ingestion(document_id: str, file_path: Path) -> None:
     """
-    Background task: parse the PDF → chunk text → embed and index in Qdrant.
+    Background task: parse document → chunk text → embed and index in Qdrant.
     Marks the document status as READY on success or FAILED on error.
     """
     filename = _DOCUMENT_REGISTRY.get(document_id, {}).get("filename", document_id)
     try:
         _DOCUMENT_REGISTRY[document_id]["status"] = DocumentStatus.PARSING
-        from app.ingestion.pdf_parser import parse_pdf
-        regions = parse_pdf(pdf_path)
+        from app.ingestion.pdf_parser import parse_document
+        regions = parse_document(file_path)
 
         page_numbers = {getattr(r, "page_number", 1) for r in regions}
         _DOCUMENT_REGISTRY[document_id]["page_count"] = len(page_numbers) if page_numbers else 1
@@ -58,18 +65,19 @@ async def upload_document(
     file: UploadFile = File(...),
 ) -> DocumentUploadResponse:
     """
-    Accept a PDF upload and queue it for ingestion.
+    Accept a document upload (PDF, DOCX, PPTX, MD, TXT) and queue it for ingestion.
     Returns immediately with a document_id; ingestion runs in the background.
     """
-    if file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(status_code=415, detail="Only PDF uploads are supported right now.")
+    ext = Path(file.filename or "").suffix.lower()
+    if file.content_type not in ALLOWED_CONTENT_TYPES and ext not in (".pdf", ".docx", ".pptx", ".md", ".txt"):
+        raise HTTPException(status_code=415, detail="Unsupported format. Upload PDF, DOCX, PPTX, MD, or TXT files.")
 
     settings = get_settings()
     upload_dir = Path(settings.upload_dir)
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     document_id = str(uuid.uuid4())
-    destination = upload_dir / f"{document_id}.pdf"
+    destination = upload_dir / f"{document_id}{ext or '.pdf'}"
 
     contents = await file.read()
     destination.write_bytes(contents)
@@ -81,6 +89,7 @@ async def upload_document(
         "status": DocumentStatus.RECEIVED,
         "submitted_at": submitted_at,
         "path": str(destination),
+        "file_size": len(contents),
         "page_count": 0,
         "chunk_count": 0,
     }
@@ -94,6 +103,7 @@ async def upload_document(
         status=DocumentStatus.RECEIVED,
         submitted_at=submitted_at,
     )
+
 
 
 @router.get("", response_model=dict[str, list[dict]])

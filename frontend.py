@@ -182,14 +182,23 @@ col_upload, col_query = st.columns([1, 1.8], gap="large")
 # --- COLUMN 1: DOCUMENT INGESTION & PROCESSING ---
 with col_upload:
     st.header("1. Ingestion Pipeline")
-    uploaded_file = st.file_uploader("Upload Document (PDF)", type=["pdf"])
+    uploaded_file = st.file_uploader("Upload Enterprise Document (PDF, DOCX, PPTX, MD, TXT)", type=["pdf", "docx", "pptx", "md", "txt"])
     
     if uploaded_file is not None:
-        if st.button("🚀 Upload & Ingest PDF", use_container_width=True):
+        if st.button("🚀 Upload & Ingest Document", use_container_width=True):
             with st.spinner("Uploading document to backend..."):
                 try:
-                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
-                    response = requests.post(f"{backend_url}/documents/upload", files=files, timeout=10)
+                    ext = uploaded_file.name.split(".")[-1].lower()
+                    mime_map = {
+                        "pdf": "application/pdf",
+                        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        "md": "text/markdown",
+                        "txt": "text/plain"
+                    }
+                    content_type = mime_map.get(ext, "application/octet-stream")
+                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), content_type)}
+                    response = requests.post(f"{backend_url}/documents/upload", files=files, timeout=15)
                     
                     if response.status_code == 202:
                         data = response.json()
@@ -206,6 +215,7 @@ with col_upload:
                         st.error(f"Upload failed: {response.text}")
                 except Exception as exc:
                     st.error(f"Upload error: {str(exc)}")
+
 
     # Polling Status for Active Document
     if st.session_state["active_document_id"]:

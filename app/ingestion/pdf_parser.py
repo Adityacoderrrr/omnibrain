@@ -136,3 +136,75 @@ def detect_tables(pdf_path: Path, page_number: int) -> list[PageRegion]:
     return regions
 
 
+
+def parse_text_file(file_path: Path) -> list[PageRegion]:
+    """Parse text (.txt) file into page regions."""
+    content = file_path.read_text(encoding="utf-8", errors="ignore")
+    if not content.strip():
+        return []
+    return [PageRegion(page_number=1, region_type=RegionType.TEXT, content=content.strip())]
+
+
+def parse_markdown_file(file_path: Path) -> list[PageRegion]:
+    """Parse markdown (.md) file into page regions."""
+    content = file_path.read_text(encoding="utf-8", errors="ignore")
+    if not content.strip():
+        return []
+    return [PageRegion(page_number=1, region_type=RegionType.TEXT, content=content.strip())]
+
+
+
+def parse_docx_file(file_path: Path) -> list[PageRegion]:
+    """Parse Word (.docx) file into page regions."""
+    try:
+        import docx
+        doc = docx.Document(file_path)
+        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+        content = "\n\n".join(paragraphs)
+        if not content.strip():
+            return []
+        return [PageRegion(page_number=1, region_type=RegionType.TEXT, content=content)]
+    except Exception:
+        # Fallback reading
+        return parse_text_file(file_path)
+
+
+def parse_pptx_file(file_path: Path) -> list[PageRegion]:
+    """Parse PowerPoint (.pptx) file into page regions (one per slide)."""
+    try:
+        import pptx
+        prs = pptx.Presentation(file_path)
+        regions = []
+        for idx, slide in enumerate(prs.slides):
+            slide_texts = []
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    slide_texts.append(shape.text.strip())
+            if slide_texts:
+                regions.append(
+                    PageRegion(page_number=idx + 1, region_type=RegionType.TEXT, content="\n".join(slide_texts))
+                )
+        return regions
+    except Exception:
+        return parse_text_file(file_path)
+
+
+def parse_document(file_path: Path) -> list[PageRegion]:
+    """
+    Universal multi-format document parser.
+    Routes to specific extractor based on file extension (.pdf, .docx, .pptx, .md, .txt).
+    """
+    suffix = file_path.suffix.lower()
+    if suffix == ".pdf":
+        return parse_pdf(file_path)
+    elif suffix in (".docx", ".doc"):
+        return parse_docx_file(file_path)
+    elif suffix in (".pptx", ".ppt"):
+        return parse_pptx_file(file_path)
+    elif suffix in (".md", ".markdown"):
+        return parse_markdown_file(file_path)
+    else:
+        return parse_text_file(file_path)
+
+
+
