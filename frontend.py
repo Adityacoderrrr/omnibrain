@@ -96,6 +96,8 @@ if "uploaded_documents" not in st.session_state:
     st.session_state["uploaded_documents"] = {}
 if "session_id" not in st.session_state:
     st.session_state["session_id"] = f"session_{uuid.uuid4().hex[:8]}"
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
 
 # --- SIDEBAR CONTROL PANEL ---
 with st.sidebar:
@@ -245,48 +247,64 @@ with col_query:
                         if query_resp.status_code == 200:
                             res_data = query_resp.json()
                             
-                            # Display Final Consolidated Answer
-                            st.subheader("Consolidated Response")
-                            st.markdown(f"```text\n{res_data.get('answer')}\n```")
-
-                            # Display Confidence Metrics
-                            conf_scores = res_data.get("confidence_scores", {})
-                            if conf_scores:
-                                st.subheader("Confidence Telemetry")
-                                conf_cols = st.columns(len(conf_scores))
-                                for idx, (agent_k, score_v) in enumerate(conf_scores.items()):
-                                    conf_cols[idx].metric(label=f"Agent [{agent_k.upper()}]", value=f"{score_v * 100:.0f}%")
-
-                            # Display SQL Explanation if available
-                            sql_expl = res_data.get("sql_explanation")
-                            if sql_expl:
-                                st.info(f"💡 **SQL Explanation**: {sql_expl}")
+                            # Render Tabbed Output Panel
+                            st.markdown("---")
+                            memo_tab, assets_tab, guardrails_tab = st.tabs([
+                                "📊 Answer & Memo", 
+                                "🖼️ Retrieved Assets", 
+                                "🛡️ Guardrail Logs & Trace"
+                            ])
                             
-                            # Display Source Citations
-                            st.subheader("Source Citations & Attributions")
-                            citations = res_data.get("citations", [])
-                            if citations:
-                                for cit in citations:
-                                    st.markdown(
-                                        f"""<div class="citation-box">
-                                            <strong>Page {cit.get('page', 1)} | Type: {cit.get('source_type', 'text').upper()}</strong><br/>
-                                            <span style="color: #8b949e;">{cit.get('snippet', 'N/A')}</span>
-                                        </div>""",
-                                        unsafe_allow_html=True
-                                    )
-                            else:
-                                st.info("No citations attached.")
+                            with memo_tab:
+                                st.subheader("Consolidated Response")
+                                st.markdown(res_data.get('answer', ''))
+                                sql_expl = res_data.get("sql_explanation")
+                                if sql_expl:
+                                    st.info(f"💡 **SQL Explanation**: {sql_expl}")
 
-                            # Display LangGraph Execution Trace
-                            with st.expander("🔍 LangGraph Telemetry & Execution Trace", expanded=True):
+                            with assets_tab:
+                                st.subheader("Source Citations & Attributions")
+                                citations = res_data.get("citations", [])
+                                if citations:
+                                    for cit in citations:
+                                        st.markdown(
+                                            f"""<div class="citation-box">
+                                                <strong>Page {cit.get('page', 1)} | Type: {cit.get('source_type', 'text').upper()}</strong><br/>
+                                                <span style="color: #8b949e;">{cit.get('snippet', 'N/A')}</span>
+                                            </div>""",
+                                            unsafe_allow_html=True
+                                        )
+                                else:
+                                    st.info("No external visual or text citations attached.")
+
+                            with guardrails_tab:
+                                conf_scores = res_data.get("confidence_scores", {})
+                                if conf_scores:
+                                    st.subheader("Confidence Telemetry")
+                                    conf_cols = st.columns(len(conf_scores))
+                                    for idx, (agent_k, score_v) in enumerate(conf_scores.items()):
+                                        conf_cols[idx].metric(label=f"Agent [{agent_k.upper()}]", value=f"{score_v * 100:.0f}%")
+
+                                st.subheader("LangGraph Telemetry & Execution Trace")
                                 trace_steps = res_data.get("agent_trace", [])
                                 for step in trace_steps:
                                     st.markdown(f'<div class="trace-step">➔ {step}</div>', unsafe_allow_html=True)
+
+                            # Persist session state message
+                            st.session_state["messages"].append({
+                                "role": "user", "content": question
+                            })
+                            st.session_state["messages"].append({
+                                "role": "assistant", 
+                                "content": res_data.get("answer", ""),
+                                "res_data": res_data
+                            })
 
                         else:
                             st.error(f"Query execution failed ({query_resp.status_code}): {query_resp.text}")
                     except Exception as exc:
                         st.error(f"Execution exception: {str(exc)}")
+
 
 st.markdown("---")
 st.caption("OmniBrain Platform — Enterprise Multi-Modal Agentic RAG Orchestrator")
