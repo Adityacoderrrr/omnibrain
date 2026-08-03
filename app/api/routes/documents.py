@@ -5,7 +5,6 @@ Week 1 scope: accept an uploaded PDF asynchronously, persist it to disk,
 kick off the parse → chunk → embed ingestion pipeline as a background task,
 and return a document_id + status the client can poll.
 """
-
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
