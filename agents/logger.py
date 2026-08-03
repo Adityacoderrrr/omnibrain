@@ -7,26 +7,34 @@ secret key sanitization, and JSON-structured log formatting for enterprise obser
 
 import json
 import logging
+import re
 import sys
 import time
 from typing import Any, Dict, Optional
 
 
+
 class MaskingFormatter(logging.Formatter):
     """
-    Custom logging formatter that automatically redacts sensitive keywords
-    and API keys from log records before sending to stdout/stderr or monitoring tools.
+    Custom logging formatter that automatically redacts sensitive keywords,
+    API keys, and authorization tokens from log records.
     """
 
-    SENSITIVE_KEYS = ["api_key", "secret", "password", "token", "authorization", "bearer"]
+    SENSITIVE_PATTERNS = [
+        (re.compile(r"sk-[a-zA-Z0-9]{20,}", re.IGNORECASE), "sk-***MASKED***"),
+        (re.compile(r"(api[-_]?key|secret|password|token|authorization)\s*[:=]\s*['\"]?([^'\"\s]+)['\"]?", re.IGNORECASE), r"\1=***MASKED***"),
+        (re.compile(r"bearer\s+[a-zA-Z0-9_\-\.]+", re.IGNORECASE), "Bearer ***MASKED***"),
+    ]
 
     def format(self, record: logging.LogRecord) -> str:
-        formatted = super().format(record)
-        for key in self.SENSITIVE_KEYS:
-            if key in formatted.lower():
-                # Avoid leaking API keys if accidentally included in log strings
-                pass
-        return formatted
+        try:
+            formatted = super().format(record)
+            for pattern, replacement in self.SENSITIVE_PATTERNS:
+                formatted = pattern.sub(replacement, formatted)
+            return formatted
+        except Exception:
+            # Fallback to standard formatting on unexpected error
+            return super().format(record)
 
 
 def get_logger(name: str = "omnibrain") -> logging.Logger:
@@ -86,7 +94,17 @@ def log_agent_execution(
         "metadata": extra_metadata or {}
     }
 
-    log_message = f"Agent [{agent_name}] status={status} time={execution_time_ms:.2f}ms | JSON: {json.dumps(telemetry)}"
+    try:
+        telemetry_json = json.dumps(telemetry, default=str)
+    except Exception as exc:
+        telemetry_json = json.dumps({
+            "event": "agent_execution",
+            "agent": agent_name,
+            "status": status,
+            "serialization_warning": str(exc)
+        })
+
+    log_message = f"Agent [{agent_name}] status={status} time={execution_time_ms:.2f}ms | JSON: {telemetry_json}"
     
     if status == "SUCCESS":
         logger.info(log_message)
@@ -94,3 +112,4 @@ def log_agent_execution(
         logger.warning(log_message)
     else:
         logger.error(log_message)
+
