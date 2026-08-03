@@ -114,3 +114,24 @@ def test_utils_with_retry_success_and_failure():
     with pytest.raises(TypeError):
         failing_func()
     assert call_count_fail == 2
+
+
+def test_safe_env_parsing(monkeypatch):
+    """Verify _safe_int and _safe_float fall back gracefully when given invalid string values."""
+    from app.core.config import _safe_int, _safe_float
+    monkeypatch.setenv("TEST_BAD_INT", "not_an_int")
+    monkeypatch.setenv("TEST_BAD_FLOAT", "not_a_float")
+
+    assert _safe_int("TEST_BAD_INT", 8000) == 8000
+    assert _safe_float("TEST_BAD_FLOAT", 10.0) == 10.0
+
+
+def test_logger_masking_sensitive_patterns(capsys):
+    """Verify MaskingFormatter redacts secret API keys and bearer tokens from logs."""
+    from agents.logger import get_logger
+    test_log = get_logger("secret_test_logger")
+    test_log.info("Connecting with api_key=sk-1234567890123456789012345678 and Authorization: Bearer secret_token_xyz")
+    captured = capsys.readouterr()
+    assert "sk-1234567890123456789012345678" not in captured.out
+    assert "***MASKED***" in captured.out
+
