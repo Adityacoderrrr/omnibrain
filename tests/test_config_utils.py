@@ -4,7 +4,7 @@ Unit tests for OmniBrain Configuration, Structured Logging, and Utility modules.
 
 import pytest
 import logging
-from app.core.config import get_settings, Settings
+from app.core.config import get_settings, Settings, clear_settings_cache
 from agents.logger import get_logger, log_agent_execution
 from agents.utils import (
     with_retry,
@@ -25,6 +25,15 @@ def test_settings_singleton_and_masking():
     if settings.openai_api_key:
         assert "***" in masked["openai_api_key"]
     assert "openai_api_key" in masked
+
+
+def test_clear_settings_cache():
+    """Verify clear_settings_cache successfully invalidates LRU cache."""
+    s1 = get_settings()
+    clear_settings_cache()
+    s2 = get_settings()
+    assert s1 is not s2
+
 
 
 def test_logger_creation_and_execution_logging(capsys):

@@ -115,3 +115,11 @@ def get_settings() -> Settings:
             config_logger.info("QDRANT_API_KEY is not configured; running in local/unauthenticated vector DB mode.")
     return settings
 
+
+def clear_settings_cache() -> None:
+    """
+    Clears cached Settings singleton instance for testing or dynamic re-configuration.
+    """
+    get_settings.cache_clear()
+
+
