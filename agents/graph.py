@@ -15,6 +15,8 @@ from agents.reducer import reducer
 from agents.router import route_decision
 from agents.logger import get_logger
 
+from agents.reflection import reflection
+
 logger = get_logger("omnibrain.agents.graph")
 
 # Step 1: Initialize StateGraph with AgentState schema
@@ -26,6 +28,7 @@ workflow.add_node("search", search_agent)
 workflow.add_node("vision", vision_agent)
 workflow.add_node("sql", sql_agent)
 workflow.add_node("reducer", reducer)
+workflow.add_node("reflection", reflection)
 
 # Step 3: Set Graph Entry Point
 workflow.add_edge(START, "supervisor")
@@ -46,8 +49,9 @@ workflow.add_edge("search", "reducer")
 workflow.add_edge("vision", "reducer")
 workflow.add_edge("sql", "reducer")
 
-# Step 6: Direct Reducer to Graph Termination (END)
-workflow.add_edge("reducer", END)
+# Step 6: Route Reducer to Reflection, then Reflection to END
+workflow.add_edge("reducer", "reflection")
+workflow.add_edge("reflection", END)
 
 # Step 7: Initialize In-Memory Checkpointer for Session State Recovery
 checkpointer = MemorySaver()

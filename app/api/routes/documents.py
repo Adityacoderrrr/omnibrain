@@ -159,3 +159,42 @@ async def delete_document(document_id: str) -> dict[str, str]:
     return {"message": f"Document '{document_id}' successfully deleted."}
 
 
+@router.patch("/{document_id}/rename", response_model=dict[str, str])
+async def rename_document(document_id: str, new_filename: str) -> dict[str, str]:
+    """Rename an ingested document."""
+    record = _DOCUMENT_REGISTRY.get(document_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Document not found")
+    record["filename"] = new_filename
+    return {"message": f"Document renamed to '{new_filename}'"}
+
+
+@router.patch("/{document_id}/tags", response_model=dict[str, str])
+async def tag_document(document_id: str, tags: list[str]) -> dict[str, str]:
+    """Add or update tags on a document."""
+    record = _DOCUMENT_REGISTRY.get(document_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Document not found")
+    record["tags"] = tags
+    return {"message": "Tags updated successfully"}
+
+
+@router.get("/{document_id}/details", response_model=dict)
+async def get_document_details(document_id: str) -> dict:
+    """Get full document inspection metadata, chunk count, and embedding status."""
+    record = _DOCUMENT_REGISTRY.get(document_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {
+        "document_id": document_id,
+        "filename": record.get("filename"),
+        "status": record.get("status"),
+        "file_size_bytes": record.get("file_size", 0),
+        "page_count": record.get("page_count", 0),
+        "chunk_count": record.get("chunk_count", 0),
+        "tags": record.get("tags", []),
+        "collection": record.get("collection", "default"),
+        "submitted_at": str(record.get("submitted_at")),
+    }
+
+

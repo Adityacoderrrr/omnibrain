@@ -112,6 +112,13 @@ def embed_and_upsert_text_chunks(chunks: list[TextChunk], filename: str = "") ->
 
     client.upsert(collection_name=settings.qdrant_text_collection, points=points)
 
+    # Index into BM25 engine for hybrid search
+    try:
+        from app.ingestion.bm25_indexer import bm25_indexer
+        bm25_indexer.add_chunks(chunks, filename=filename)
+    except Exception as exc:
+        logger.warning("BM25 indexing failed: %s", exc)
+
 
 def embed_and_upsert_image_regions(document_id: str, regions: list, filename: str = "") -> None:
     """Embed table/chart regions via CLIP (or local mock) and upsert into the image collection."""
@@ -171,6 +178,13 @@ def delete_document_vectors(document_id: str) -> None:
             client.delete(collection_name=settings.qdrant_image_collection, points_selector=doc_filter)
         except Exception as e:
             logger.warning("Error deleting image vectors for document %s: %s", document_id, e)
+
+        # Remove from BM25 index
+        try:
+            from app.ingestion.bm25_indexer import bm25_indexer
+            bm25_indexer.remove_document(document_id)
+        except Exception as e:
+            logger.warning("Error removing document %s from BM25 index: %s", document_id, e)
     except Exception as exc:
         logger.error("Failed to delete vectors for document %s: %s", document_id, exc)
 
