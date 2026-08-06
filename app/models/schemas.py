@@ -57,4 +57,54 @@ class QueryResponse(BaseModel):
     )
     trace_details: dict = Field(default_factory=dict, description="Structured observability trace dictionary per agent node")
     token_analytics: dict = Field(default_factory=dict, description="Prompt, completion, and total token usage metrics")
+    follow_up_questions: list[str] = Field(default_factory=list, description="Generated follow-up questions")
+    reflection: dict = Field(default_factory=dict, description="Self-reflection and answer verification metrics")
+
+
+class CollectionCreate(BaseModel):
+    name: str = Field(..., min_length=1, description="Name of the document collection")
+    description: str | None = Field(default="", description="Description of the collection")
+    tags: list[str] = Field(default_factory=list)
+
+
+class CollectionResponse(BaseModel):
+    collection_id: str
+    name: str
+    description: str | None = ""
+    tags: list[str] = []
+    document_count: int = 0
+    created_at: datetime
+
+
+class DocumentRenameRequest(BaseModel):
+    new_filename: str = Field(..., min_length=1)
+
+
+class DocumentTagRequest(BaseModel):
+    tags: list[str] = Field(default_factory=list)
+
+
+class TraceItemResponse(BaseModel):
+    request_id: str
+    session_id: str
+    timestamp: str
+    question: str
+    answer: str
+    agent_trace: list[str]
+    trace_details: dict
+    token_analytics: dict
+    execution_time_ms: float
+
+
+class AnalyticsOverviewResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    total_queries: int
+    total_documents: int
+    total_tokens: int
+    avg_latency_ms: float
+    avg_confidence: float
+    estimated_cost_usd: float
+    agent_calls: dict[str, int]
+    model_breakdown: dict[str, int]
+
 

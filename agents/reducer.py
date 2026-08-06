@@ -97,6 +97,21 @@ def reducer(state: AgentState) -> AgentState:
                         unique_citations.append(cit)
 
             state["citations"] = unique_citations
+            
+            # Auto-generate relevant follow-up questions
+            try:
+                state["follow_up_questions"] = [
+                    f"Can you provide more details about this section?",
+                    f"How does this compare to related metrics?",
+                    f"What are the key takeaways from page {unique_citations[0].get('page', 1)}?" if unique_citations else "What are the key recommendations?"
+                ]
+            except Exception:
+                state["follow_up_questions"] = [
+                    "Can you elaborate further?",
+                    "What are the next steps?",
+                    "Are there related documents?"
+                ]
+
             state["agent_trace"] = ["Reducer: Consolidated final response and deduplicated citations"]
 
             trace_details_map = state.get("trace_details") or {}

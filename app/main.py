@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import documents, query
+from app.api.routes import documents, query, collections, tracing, analytics
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -30,8 +30,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="OmniBrain API",
-    description="Agentic Multi-Modal RAG Orchestrator — backend service.",
-    version="0.1.0",
+    description="Agentic Multi-Modal RAG Orchestrator — enterprise backend service.",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -46,6 +46,9 @@ app.add_middleware(
 
 app.include_router(documents.router)
 app.include_router(query.router)
+app.include_router(collections.router)
+app.include_router(tracing.router)
+app.include_router(analytics.router)
 
 
 @app.get("/", tags=["root"])

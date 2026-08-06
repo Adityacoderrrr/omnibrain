@@ -117,53 +117,75 @@ def search_agent(state: AgentState) -> AgentState:
                     ]
                 )
 
-            # Step 3: Perform Qdrant Vector Search
-            logger.info("Querying Qdrant text collection: '%s'", settings.qdrant_text_collection)
+            # Step 3: Perform Hybrid Retrieval (Vector + BM25 RRF)
+            logger.info("Performing hybrid search over Qdrant & BM25 index...")
             try:
-                search_results = client.search(
-                    collection_name=settings.qdrant_text_collection,
-                    query_vector=query_vector,
-                    query_filter=qdrant_filter,
-                    limit=settings.vector_search_top_k
+                from app.ingestion.hybrid_retriever import hybrid_retrieve
+                comp_chunks, raw_fused = hybrid_retrieve(
+                    query=question,
+                    document_id=document_id,
+                    top_k=settings.vector_search_top_k,
                 )
-            except Exception as qd_exc:
-                logger.warning("Qdrant search failed: %s. Utilizing fallback search payload.", qd_exc)
-                search_results = [
-                    ScoredPoint(
-                        id=1,
-                        version=1,
-                        score=0.95,
-                        payload={
-                            "text": "According to the annual summary document, revenue grew by 15% year-over-year, driven by cloud subscriptions.",
-                            "page_number": 1,
-                            "document_id": document_id
-                        }
-                    )
-                ]
+            except Exception as hr_exc:
+                logger.warning("Hybrid retrieval error: %s. Falling back to vector search.", hr_exc)
+                comp_chunks = []
 
             retrieved_texts: List[str] = []
             citations: List[Dict[str, Any]] = []
 
-            for hit in search_results:
-                payload = getattr(hit, "payload", None) or (hit.get("payload") if isinstance(hit, dict) else {}) or {}
-                text = payload.get("text", "")
-                if not text:
-                    continue
-
-                filename = payload.get("filename", payload.get("document_id", "Document"))
+            if comp_chunks:
+                for chunk in comp_chunks:
+                    text = chunk.get("text", "")
+                    if not text:
+                        continue
+                    filename = chunk.get("filename") or chunk.get("document_id") or "Document"
+                    page = chunk.get("page_number", 1)
+                    retrieved_texts.append(f"[Source: {filename} | Page {page}]\n{text}")
+                    citations.append({
+                        "document_name": filename,
+                        "page": page,
+                        "source_type": "text",
+                        "snippet": chunk.get("snippet") or text[:200]
+                    })
+            else:
                 try:
-                    page = int(payload.get("page_number", 1))
-                except (ValueError, TypeError):
-                    page = 1
-                
-                retrieved_texts.append(f"[Source: {filename} | Page {page}]\n{text}")
-                citations.append({
-                    "document_name": filename,
-                    "page": page,
-                    "source_type": "text",
-                    "snippet": text[:200]
-                })
-
+                    search_results = client.search(
+                        collection_name=settings.qdrant_text_collection,
+                        query_vector=query_vector,
+                        query_filter=qdrant_filter,
+                        limit=settings.vector_search_top_k
+                    )
+                except Exception as qd_exc:
+                    logger.warning("Qdrant search failed: %s. Utilizing fallback search payload.", qd_exc)
+                    search_results = [
+                        ScoredPoint(
+                            id=1,
+                            version=1,
+                            score=0.95,
+                            payload={
+                                "text": "According to the annual summary document, revenue grew by 15% year-over-year, driven by cloud subscriptions.",
+                                "page_number": 1,
+                                "document_id": document_id
+                            }
+                        )
+                    ]
+                for hit in search_results:
+                    payload = getattr(hit, "payload", None) or (hit.get("payload") if isinstance(hit, dict) else {}) or {}
+                    text = payload.get("text", "")
+                    if not text:
+                        continue
+                    filename = payload.get("filename", payload.get("document_id", "Document"))
+                    try:
+                        page = int(payload.get("page_number", 1))
+                    except (ValueError, TypeError):
+                        page = 1
+                    retrieved_texts.append(f"[Source: {filename} | Page {page}]\n{text}")
+                    citations.append({
+                        "document_name": filename,
+                        "page": page,
+                        "source_type": "text",
+                        "snippet": text[:200]
+                    })
 
             context_str = compress_context_chunks(retrieved_texts, max_tokens=1500) if retrieved_texts else "No document text retrieved."
 
