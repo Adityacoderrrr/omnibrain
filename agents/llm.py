@@ -91,18 +91,39 @@ def invoke_llm(prompt: str, system_prompt: Optional[str] = None) -> str:
 
     # 2. Text-to-SQL Mock
     if "text-to-sql" in sys_prompt_lower or "postgresql" in sys_prompt_lower:
+        if "count" in prompt_lower or "how many" in prompt_lower:
+            return "SELECT COUNT(*) FROM sales_records;"
+        elif "product" in prompt_lower or "units" in prompt_lower:
+            return "SELECT product, SUM(units_sold) AS total_units FROM sales_records GROUP BY product;"
+        elif "eu" in prompt_lower or "europe" in prompt_lower:
+            return "SELECT * FROM sales_records WHERE region = 'EU';"
+        elif "apac" in prompt_lower or "asia" in prompt_lower:
+            return "SELECT * FROM sales_records WHERE region = 'APAC';"
         return "SELECT SUM(revenue) FROM sales_records WHERE region = 'US';"
 
     # 3. SQL Response Summarization & Explanation Mock
     if "executed sql query" in sys_prompt_lower or "sql execution results:" in sys_prompt_lower:
-        return "According to the historical SQL database records, the total revenue in the US region is $150,000. This was calculated by summing all revenue entries in the sales_records table where the region equals 'US'."
+        results_snippet = ""
+        if "SQL Execution Results:" in (system_prompt or ""):
+            results_snippet = (system_prompt or "").split("SQL Execution Results:")[-1].strip()
+        return f"According to the database records, the SQL query executed successfully. Retrieved results: {results_snippet or 'Total US revenue: $150,000'}."
 
     # 4. Vision Agent Mock
     if "vision agent" in sys_prompt_lower:
+        if "no visual elements" in sys_prompt_lower:
+            return "I don't have enough information in the visual metadata."
         return "Based on the retrieved chart metadata on page 2, revenue shows an upward trend reaching $150,000."
 
     # 5. Search Agent Mock
     if "search agent" in sys_prompt_lower:
+        if "no relevant document text retrieved" in sys_prompt_lower or "no document text retrieved" in sys_prompt_lower:
+            return "I don't have enough information in the uploaded enterprise documents to answer this question."
+        if "Retrieved Context:" in (system_prompt or ""):
+            ctx_part = (system_prompt or "").split("Retrieved Context:")[-1].split("Question:")[0].strip()
+            if ctx_part and "no relevant document text retrieved" not in ctx_part.lower():
+                lines = [line.strip() for line in ctx_part.split("\n") if line.strip() and not line.startswith("[Source:")]
+                if lines:
+                    return "Based on the retrieved context from your documents:\n\n" + "\n\n".join(lines[:3])
         return "Based on the retrieved text context, the document states that revenue grew by 15% year-over-year."
 
     # 6. Reducer Master Consolidation Mock

@@ -200,7 +200,7 @@ with col_upload:
                     files = {"file": (uploaded_file.name, uploaded_file.getvalue(), content_type)}
                     response = requests.post(f"{backend_url}/documents/upload", files=files, timeout=15)
                     
-                    if response.status_code == 202:
+                    if response.status_code in (200, 201, 202):
                         data = response.json()
                         doc_id = data["document_id"]
                         

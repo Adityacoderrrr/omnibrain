@@ -95,4 +95,6 @@ class AgentState(TypedDict, total=False):
     errors: Annotated[List[str], operator.add]
     trace_details: Annotated[Dict[str, Any], merge_dicts]
     token_analytics: Annotated[Dict[str, int], merge_dicts]
+    reflection: Annotated[Dict[str, Any], merge_dicts]
+    follow_up_questions: Annotated[List[str], combine_lists]
 

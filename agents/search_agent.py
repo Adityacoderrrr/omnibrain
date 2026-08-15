@@ -3,7 +3,8 @@ Search Agent component of the OmniBrain AI Intelligence Layer.
 Retrieves relevant text chunks from Qdrant vector database and uses them for semantic RAG synthesis with context compression.
 """
 
-from typing import List, Dict, Any
+import logging
+from typing import List, Dict, Any, Optional
 from app.core.config import get_settings
 from app.ingestion.embedder import get_qdrant_client, _get_mock_embedding
 from agents.state import AgentState
@@ -33,7 +34,7 @@ if ScoredPoint is None:
             self.score = score
             self.payload = payload or {}
 
-logger = get_logger("omnibrain.agents.search_agent")
+logger: logging.Logger = get_logger("omnibrain.agents.search_agent")
 
 
 def compress_context_chunks(chunks: List[str], max_tokens: int = 1500) -> str:
@@ -132,6 +133,7 @@ def search_agent(state: AgentState) -> AgentState:
 
             retrieved_texts: List[str] = []
             citations: List[Dict[str, Any]] = []
+            search_results: List[Any] = []
 
             if comp_chunks:
                 for chunk in comp_chunks:
@@ -156,19 +158,9 @@ def search_agent(state: AgentState) -> AgentState:
                         limit=settings.vector_search_top_k
                     )
                 except Exception as qd_exc:
-                    logger.warning("Qdrant search failed: %s. Utilizing fallback search payload.", qd_exc)
-                    search_results = [
-                        ScoredPoint(
-                            id=1,
-                            version=1,
-                            score=0.95,
-                            payload={
-                                "text": "According to the annual summary document, revenue grew by 15% year-over-year, driven by cloud subscriptions.",
-                                "page_number": 1,
-                                "document_id": document_id
-                            }
-                        )
-                    ]
+                    logger.warning("Qdrant search failed or collection empty: %s.", qd_exc)
+                    search_results = []
+
                 for hit in search_results:
                     payload = getattr(hit, "payload", None) or (hit.get("payload") if isinstance(hit, dict) else {}) or {}
                     text = payload.get("text", "")
@@ -187,11 +179,17 @@ def search_agent(state: AgentState) -> AgentState:
                         "snippet": text[:200]
                     })
 
-            context_str = compress_context_chunks(retrieved_texts, max_tokens=1500) if retrieved_texts else "No document text retrieved."
+            if retrieved_texts:
+                context_str = compress_context_chunks(retrieved_texts, max_tokens=1500)
+            else:
+                context_str = "No relevant document text retrieved."
 
             # Step 4: Invoke RAG LLM
-            system_prompt = SEARCH_AGENT_PROMPT.format(context=context_str, question=question)
-            answer = invoke_llm(prompt=f"Question: {question}", system_prompt=system_prompt)
+            if not retrieved_texts:
+                answer = "I don't have enough information in the uploaded enterprise documents to answer this question."
+            else:
+                system_prompt = SEARCH_AGENT_PROMPT.format(context=context_str, question=question)
+                answer = invoke_llm(prompt=f"Question: {question}", system_prompt=system_prompt)
 
             # Update State
             agent_responses = state.get("agent_responses") or {}
@@ -199,7 +197,7 @@ def search_agent(state: AgentState) -> AgentState:
             state["agent_responses"] = agent_responses
 
             confidence_map = state.get("confidence_scores") or {}
-            confidence_map["search"] = 0.92 if retrieved_texts else 0.40
+            confidence_map["search"] = 0.92 if retrieved_texts else 0.0
             state["confidence_scores"] = confidence_map
 
             metrics_map = state.get("execution_metrics") or {}
@@ -207,7 +205,8 @@ def search_agent(state: AgentState) -> AgentState:
             state["execution_metrics"] = metrics_map
 
             # Compute Token & Observability Metrics
-            prompt_tokens = estimate_token_count(system_prompt)
+            system_prompt_str = SEARCH_AGENT_PROMPT.format(context=context_str, question=question) if retrieved_texts else ""
+            prompt_tokens = estimate_token_count(system_prompt_str)
             answer_tokens = estimate_token_count(answer)
             
             token_analytics_map = state.get("token_analytics") or {}
@@ -216,29 +215,31 @@ def search_agent(state: AgentState) -> AgentState:
             token_analytics_map["total_tokens"] = token_analytics_map.get("prompt_tokens", 0) + token_analytics_map.get("completion_tokens", 0)
             state["token_analytics"] = token_analytics_map
 
-            top_sim = 0.96 if search_results else 0.40
+            from app.ingestion.bm25_indexer import bm25_indexer
+            total_indexed_chunks = getattr(bm25_indexer, "total_docs", len(retrieved_texts))
+
+            top_sim = round(max([c.get("similarity", 0.92) for c in (comp_chunks or [])] + [getattr(h, "score", 0.0) for h in (search_results or [])] + [0.0]), 2) if retrieved_texts else 0.0
             chunk_previews = []
-            for idx, hit in enumerate(search_results[:5]):
-                payload = getattr(hit, "payload", None) or (hit.get("payload") if isinstance(hit, dict) else {}) or {}
+            for idx, c in enumerate((comp_chunks or [])[:5]):
                 chunk_previews.append({
-                    "page": payload.get("page_number", 1),
-                    "section": payload.get("filename", document_id or "Document"),
-                    "similarity": round(getattr(hit, "score", 0.96 - idx * 0.03), 2),
-                    "snippet": payload.get("text", "")[:180]
+                    "page": c.get("page_number", 1),
+                    "section": c.get("filename", document_id or "Document"),
+                    "similarity": round(c.get("rrf_score", 0.90), 3),
+                    "snippet": (c.get("text") or "")[:180]
                 })
 
             trace_details_map = state.get("trace_details") or {}
             trace_details_map["search"] = {
                 "collection": settings.qdrant_text_collection,
-                "chunks_searched": 352,
+                "chunks_searched": max(total_indexed_chunks, len(retrieved_texts)),
                 "top_k": settings.vector_search_top_k,
                 "retrieved_count": len(retrieved_texts),
                 "top_similarity": top_sim,
                 "chunk_previews": chunk_previews,
-                "prompt_sent": system_prompt,
+                "prompt_sent": system_prompt_str[:300],
                 "context_used": context_str[:300],
                 "generated_answer": answer,
-                "confidence": 0.92 if retrieved_texts else 0.40,
+                "confidence": 0.92 if retrieved_texts else 0.0,
                 "execution_time_ms": round(timer.elapsed_ms, 2)
             }
             state["trace_details"] = trace_details_map
@@ -247,10 +248,9 @@ def search_agent(state: AgentState) -> AgentState:
             state["response"] = answer
             state["citations"] = citations
             state["agent_trace"] = [
-                f"Search Agent: Retrieved {len(retrieved_texts)} text chunks from Qdrant",
+                f"Search Agent: Retrieved {len(retrieved_texts)} text chunks from index",
                 "Search Agent: Synthesized textual RAG response"
             ]
-
 
             log_agent_execution(
                 logger=logger,

@@ -83,19 +83,8 @@ def vision_agent(state: AgentState) -> AgentState:
                     limit=settings.vector_search_top_k
                 )
             except Exception as qd_exc:
-                logger.warning("Qdrant image search failed: %s. Using fallback visual metadata.", qd_exc)
-                search_results = [
-                    ScoredPoint(
-                        id=2,
-                        version=2,
-                        score=0.88,
-                        payload={
-                            "page_number": 2,
-                            "region_type": "chart",
-                            "document_id": document_id
-                        }
-                    )
-                ]
+                logger.warning("Qdrant image search failed or collection empty: %s.", qd_exc)
+                search_results = []
 
             retrieved_images: List[Dict[str, Any]] = []
             citations: List[Dict[str, Any]] = []
@@ -125,11 +114,13 @@ def vision_agent(state: AgentState) -> AgentState:
                     "snippet": f"Identified visual {region_type} on page {page} with score {score_val:.2f}"
                 })
 
-            visual_context = "\n".join(metadata_snippets) if metadata_snippets else "No visual elements retrieved."
-
-            # Step 3: Invoke VLM Reasoning Prompt
-            system_prompt = VISION_AGENT_PROMPT.format(visual_context=visual_context, question=question)
-            answer = invoke_llm(prompt=f"Question: {question}", system_prompt=system_prompt)
+            if retrieved_images:
+                visual_context = "\n".join(metadata_snippets)
+                system_prompt = VISION_AGENT_PROMPT.format(visual_context=visual_context, question=question)
+                answer = invoke_llm(prompt=f"Question: {question}", system_prompt=system_prompt)
+            else:
+                visual_context = "No visual elements retrieved."
+                answer = "I don't have enough information in the visual metadata or chart regions for this document to answer this question."
 
             # Update State
             agent_responses = state.get("agent_responses") or {}
@@ -137,7 +128,7 @@ def vision_agent(state: AgentState) -> AgentState:
             state["agent_responses"] = agent_responses
 
             confidence_map = state.get("confidence_scores") or {}
-            confidence_map["vision"] = 0.88 if retrieved_images else 0.40
+            confidence_map["vision"] = 0.88 if retrieved_images else 0.0
             state["confidence_scores"] = confidence_map
 
             metrics_map = state.get("execution_metrics") or {}
@@ -148,8 +139,8 @@ def vision_agent(state: AgentState) -> AgentState:
             state["response"] = answer
             state["citations"] = citations
             state["agent_trace"] = [
-                f"Vision Agent: Searched Qdrant image collection, retrieved {len(retrieved_images)} regions",
-                "Vision Agent: Generated VLM visual reasoning analysis"
+                f"Vision Agent: Searched visual collection, found {len(retrieved_images)} region(s)",
+                "Vision Agent: Generated visual analysis"
             ]
 
             log_agent_execution(
