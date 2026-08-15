@@ -28,7 +28,7 @@ workflow.add_node("search", search_agent)
 workflow.add_node("vision", vision_agent)
 workflow.add_node("sql", sql_agent)
 workflow.add_node("reducer", reducer)
-workflow.add_node("reflection", reflection)
+workflow.add_node("self_reflection", reflection)
 
 # Step 3: Set Graph Entry Point
 workflow.add_edge(START, "supervisor")
@@ -50,8 +50,8 @@ workflow.add_edge("vision", "reducer")
 workflow.add_edge("sql", "reducer")
 
 # Step 6: Route Reducer to Reflection, then Reflection to END
-workflow.add_edge("reducer", "reflection")
-workflow.add_edge("reflection", END)
+workflow.add_edge("reducer", "self_reflection")
+workflow.add_edge("self_reflection", END)
 
 # Step 7: Initialize In-Memory Checkpointer for Session State Recovery
 checkpointer = MemorySaver()

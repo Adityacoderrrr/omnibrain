@@ -53,26 +53,5 @@ async def get_trace_details(request_id: str) -> dict:
     """Get full details of a specific execution trace including node steps and token analytics."""
     trace = _TRACE_STORE.get(request_id)
     if not trace:
-        # Fallback synthetic trace if not found
-        return {
-            "request_id": request_id,
-            "session_id": f"sess_{request_id[:8]}",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "question": "Sample trace question",
-            "answer": "Sample synthesized response",
-            "agent_trace": [
-                "Supervisor: Classified query intent as TEXT_SEARCH",
-                "Search Agent: Retrieved 5 text chunks from Qdrant",
-                "Reducer: Consolidated final response",
-                "Self-Reflection: Verified answer groundedness (Score: 0.94)",
-            ],
-            "trace_details": {
-                "supervisor": {"selected_agent": "search", "confidence": 0.95, "execution_time_ms": 12.4},
-                "search": {"collection": "omnibrain_text_chunks", "retrieved_count": 5, "top_similarity": 0.96, "execution_time_ms": 145.2},
-                "reducer": {"confidence": 0.94, "execution_time_ms": 88.6},
-                "reflection": {"groundedness_score": 0.94, "verification_status": "PASSED"},
-            },
-            "token_analytics": {"prompt_tokens": 420, "completion_tokens": 180, "total_tokens": 600},
-            "execution_time_ms": 246.2,
-        }
+        raise HTTPException(status_code=404, detail=f"Execution trace '{request_id}' not found.")
     return trace
