@@ -8,7 +8,7 @@ Thank you for contributing to OmniBrain.
 - Write clear and meaningful commit messages.
 - Update documentation when adding new features or making significant changes.
 - Discuss major architectural or design changes with the team before implementation.
-
+  
 ## Commit Message Format
 
 Examples:
