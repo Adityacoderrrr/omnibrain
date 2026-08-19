@@ -105,7 +105,8 @@ def invoke_llm(prompt: str, system_prompt: Optional[str] = None) -> str:
     if "executed sql query" in sys_prompt_lower or "sql execution results:" in sys_prompt_lower:
         results_snippet = ""
         if "SQL Execution Results:" in (system_prompt or ""):
-            results_snippet = (system_prompt or "").split("SQL Execution Results:")[-1].strip()
+            raw_results = (system_prompt or "").split("SQL Execution Results:")[-1].strip()
+            results_snippet = raw_results.split("\n\nProvide:")[0].split("\nProvide:")[0].strip()
         return f"According to the database records, the SQL query executed successfully. Retrieved results: {results_snippet or 'Total US revenue: $150,000'}."
 
     # 4. Vision Agent Mock

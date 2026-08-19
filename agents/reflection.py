@@ -51,7 +51,7 @@ def reflection(state: AgentState) -> AgentState:
             trace_details_map["reflection"] = reflection_data
             state["trace_details"] = trace_details_map
 
-            state["agent_trace"] = ["Self-Reflection: Verified answer groundedness (Score: 0.94)"]
+            state["agent_trace"] = [f"Self-Reflection: Verified answer groundedness (Score: {groundedness_score:.2f})"]
 
             log_agent_execution(
                 logger=logger,

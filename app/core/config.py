@@ -11,6 +11,12 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Dict, Any
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 config_logger = logging.getLogger("omnibrain.config")
 
 
