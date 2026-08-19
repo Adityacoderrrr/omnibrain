@@ -1,242 +1,498 @@
-# 🧠 OmniBrain: Enterprise Multi-Agent Multi-Modal RAG Orchestrator
+# 🧠 OmniBrain: An Agentic Multi-Modal RAG Orchestrator for Enterprise Document Intelligence
 
-[![Status](https://img.shields.io/badge/Status-Production%20Ready-emerald.svg)](https://github.com/Adityacoderrrr/omnibrain)
-[![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-blue.svg)](https://langchain-ai.github.io/langgraph/)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI%200.140-009688.svg)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite-61dafb.svg)](https://react.dev/)
-[![VectorDB](https://img.shields.io/badge/Vector%20DB-Qdrant%20%2B%20BM25-red.svg)](https://qdrant.tech/)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
+### A Research and Technical Design Document
 
-OmniBrain is a production-grade **Enterprise Multi-Agent Multi-Modal Retrieval-Augmented Generation (RAG) Orchestrator**. It bridges the gap between unstructured multi-format documents (PDFs, Word documents, PowerPoint presentations, Markdown, and text), visual layouts (embedded charts, tables, diagrams), and structured relational databases.
+![Domain](https://img.shields.io/badge/Domain-LLMs%20%26%20Agentic%20AI-blueviolet)
+![Orchestration](https://img.shields.io/badge/Orchestration-LangGraph-1c3d5a)
+![Vector%20DB](https://img.shields.io/badge/Vector%20DB-Qdrant%20%2F%20FAISS-green)
+![VLM](https://img.shields.io/badge/VLM-GPT--4o%20%2F%20LLaVA-orange)
+![Guardrails](https://img.shields.io/badge/Guardrails-NeMo%20Guardrails-76b900)
+![Observability](https://img.shields.io/badge/Observability-Langfuse-yellow)
+![Status](https://img.shields.io/badge/Status-Design%20Phase-lightgrey)
 
-Orchestrated via **LangGraph**, OmniBrain analyzes complex queries through a **Supervisor Router**, dynamically dispatches tasks to specialized domain agents in parallel, fuses findings through a **Master Reducer**, verifies factual accuracy via a **Self-Reflection Node**, and provides real-time **SSE token streaming** and **LangSmith/LangFuse-style execution telemetry**.
+**Domain:** Large Language Models (LLMs) & Agentic AI
+**Prepared:** July 2026
 
 ---
 
 ## 📑 Table of Contents
-1. [Core Capabilities](#-core-capabilities)
-2. [Architecture & Workflow](#-architecture--workflow)
-3. [Component Breakdown](#-component-breakdown)
-4. [Technology Stack](#-technology-stack)
-5. [API Reference](#-api-reference)
-6. [Getting Started](#-getting-started)
-7. [Running the Application](#-running-the-application)
-8. [Automated Test Suite](#-automated-test-suite)
-9. [Verified Capabilities & Roadmap](#-verified-capabilities--roadmap)
+
+1. [Abstract](#1-abstract)
+2. [Problem Statement and Motivation](#2-problem-statement-and-motivation)
+3. [Literature and Technology Landscape Review](#3-literature-and-technology-landscape-review)
+4. [System Architecture](#4-system-architecture)
+5. [Proposed Technology Stack](#5-proposed-technology-stack)
+6. [Evaluation Methodology](#6-evaluation-methodology)
+7. [Anticipated Challenges and Limitations](#7-anticipated-challenges-and-limitations)
+8. [Future Scope](#8-future-scope)
+9. [Conclusion](#9-conclusion)
+10. [Selected References](#10-selected-references)
 
 ---
 
-## 🚀 Core Capabilities
+## 1. Abstract
 
-- **LangGraph Multi-Agent StateGraph**: Supervisor router classifies query intent and coordinates specialized worker agents (`Search`, `Vision`, `SQL`) with parallel execution branches and `MemorySaver` session checkpointing.
-- **Advanced Hybrid RAG**: Combines dense vector cosine similarity (Qdrant) and sparse keyword frequency (BM25 Okapi) using **Reciprocal Rank Fusion (RRF $k=60$)**, sliding-window context compression, and highlighted snippet extraction.
-- **Multi-Format Ingestion Pipeline**: Asynchronous background document parsing for PDF (with layout extraction), Word (`.docx`), PowerPoint (`.pptx`), Markdown (`.md`), and raw text (`.txt`).
-- **Safe Text-to-SQL Engine**: Translates natural language questions to read-only SQL, validates queries against AST safety rules (blocking all destructive DDL/DML), executes against relational tables (PostgreSQL or local SQLite schema), and synthesizes plain-English explanations.
-- **Master Reducer & Citation Deduplication**: Consolidates multi-agent outputs, resolves contradictory claims, deduplicates citations by `(page, source_type, snippet)`, and calibrates confidence metrics.
-- **Self-Reflection & Groundedness Verification**: Evaluates answer groundedness against retrieved context, computes factuality scores, and auto-generates context-aware follow-up questions.
-- **Full Observability & Trace Telemetry**: Real-time trace recording capturing step latency, per-node structured inputs/outputs, prompt and completion token counts, and cost estimations.
-- **Glassmorphic Enterprise Frontend**: High-end React 18 + Vite SPA styled with Tailwind CSS and Framer Motion, featuring dark mode, SSE real-time streaming, interactive DAG trace inspection, and live observability analytics.
+OmniBrain is a proposed agentic, multi-modal Retrieval-Augmented Generation (RAG) system designed to overcome the two failure modes that cripple standard RAG pipelines in real-world enterprise settings: (1) the inability to reason over non-textual content such as financial tables, embedded charts, and scanned figures, and (2) the inability to perform multi-step reasoning that spans heterogeneous data silos (unstructured documents, structured databases, and visual assets). OmniBrain addresses both problems by replacing the conventional "single retriever → single generator" pipeline with a graph-structured team of specialized agents — a Search Agent, a Vision Agent, and a Text-to-SQL Agent — coordinated by a LangGraph supervisor. The system is grounded by a multi-modal vector store (Qdrant/FAISS) holding both text and CLIP-based image embeddings, augmented by a Vision-Language Model (VLM) for chart and table reasoning, and wrapped in an observability and guardrails layer (Langfuse + NeMo Guardrails) that enforces grounding, monitors for hallucination, and produces auditable, cited outputs. This document presents the problem motivation, a review of the current technical landscape, a full architectural design, module-by-module specifications, an evaluation methodology, anticipated challenges, and a roadmap for implementation.
 
 ---
 
-## 🏛️ Architecture & Workflow
+## 2. Problem Statement and Motivation
 
-### 1. High-Level Agentic StateGraph
+### 2.1 Why standard RAG breaks down
+
+A conventional RAG pipeline chunks a document into text passages, embeds them into a single vector space, retrieves the top-k passages for a query, and stuffs them into an LLM prompt. This design implicitly assumes that all the information a user needs is expressible as extractable text. In practice, that assumption fails in at least four common ways, particularly in dense enterprise documents such as 10-K filings, investment memos, and quarterly earnings decks:
+
+- **Scanned or image-only content.** Older filings, exhibits, and correspondence may exist only as pixel data; a text parser returns an empty string and the information is silently lost.
+- **Tables and financial statements.** Naïve chunking destroys the row/column relationships in a balance sheet or cash-flow table, so numbers get detached from their labels and units.
+- **Embedded charts and graphs.** A revenue trend chart or a stock price graph carries information that cannot be extracted as text at all — it must be visually interpreted.
+- **Cross-silo reasoning.** A single query like "How did the reported EBITDA margin compare to the company's historical stock performance during the same quarter?" cannot be answered from unstructured text alone; it requires joining a narrative claim in the PDF with structured, queryable historical data (e.g., a stock price time series in a SQL database).
+
+A single-retriever, single-generator RAG architecture has no mechanism for routing between these different evidence types, and no mechanism for verifying that the final answer is actually grounded in what was retrieved — which is why standard RAG systems remain prone to hallucination on multi-modal, multi-source enterprise workloads.
+
+### 2.2 The shift toward agentic RAG
+
+The current direction in both industry and research is to decompose the RAG problem into specialized sub-tasks handled by cooperating agents rather than a single monolithic pipeline. Recent research explicitly frames multi-modal RAG as necessary once documents exceed what a model's context window can hold and once they interleave text, tables, and charts — retrieval is used to select only the evidence that matters rather than forcing a model to read everything at once. In the financial domain specifically, recent benchmark work (e.g., FinRAGBench-V and MultiFinRAG) has emphasized that financial question answering requires jointly modeling narrative text, tables, and figures together, and that visual citation — pointing back to the exact chart or table cell that supports an answer — is critical for the kind of transparency and auditability that financial decision-making demands. This is precisely the gap OmniBrain is designed to fill.
+
+### 2.3 Use case walkthrough
+
+A quantitative analyst uploads a 500-page corporate financial PDF (e.g., a 10-K annual report with embedded revenue charts, balance-sheet tables, and MD&A narrative). The analyst asks: *"Summarize the company's Q3 margin trends, compare them to the prior two years, and relate them to the stock's recent volatility."* OmniBrain's supervisor agent decomposes this into sub-tasks: table extraction and normalization (Vision Agent), semantic narrative retrieval (Search Agent), and a historical price/volatility query (SQL Agent). The individual agent outputs are merged, cross-checked against the retrieved evidence by the guardrails layer, and synthesized into a cited investment memo, with every quantitative claim traceable to a specific page, table cell, or database row.
+
+---
+
+## 🖥️ Working Model — Screenshot
+
+### Working Model Screenshot
+
+<img width="1590" height="809" alt="Screenshot 2026-08-08 194145" src="https://github.com/user-attachments/assets/b81980ff-8136-4a99-b888-531755a3406a" />
+<img width="1312" height="957" alt="Screenshot 2026-08-08 195030" src="https://github.com/user-attachments/assets/f3ca2bce-4e5b-4190-a3cc-0a7728b99808" />
+
+---
+
+## 3. Literature and Technology Landscape Review
+
+### 3.1 Agentic orchestration frameworks
+
+LangGraph has become a widely adopted standard for building stateful, graph-based multi-agent systems, reportedly seeing tens of millions of monthly downloads and production use at large enterprises. Its core primitives are directly relevant to OmniBrain's design: a persistent **state dictionary** shared across nodes, **checkpointing** that snapshots state at each step (enabling recovery if a workflow is interrupted mid-execution), and a graph topology of **router**, **specialist agent**, and **supervisor/reducer** nodes. Among the topologies LangGraph supports — network, supervisor, and hierarchical — the **supervisor pattern** is the recommended choice for a small, fixed team of 3–5 specialists (in OmniBrain's case: Search, Vision, and SQL agents), since a fully peer-to-peer "network" topology becomes difficult to control at that scale, while a multi-level "hierarchy" is unnecessary overhead. A widely used cost-optimization pattern is to reserve a stronger reasoning model (e.g., GPT-4o-class or Claude Opus-class) for the supervisor's routing decisions, while using smaller, cheaper models for individual worker agents that only need to execute a narrow task.
+
+### 3.2 Multi-modal retrieval
+
+Three architectural patterns currently dominate multi-modal document retrieval: **caption-and-index** (a VLM generates a text caption for each image/chart, which is then embedded like ordinary text — simplest but prone to "caption drift," where hallucinated caption details pollute the index), **unified vision embeddings** (models such as Cohere Embed 4 or Voyage's multimodal embeddings project images and text into a shared vector space), and **page-as-image with late interaction** (ColPali/ColQwen-style models that embed a full rendered page as an image and perform fine-grained patch-level matching against the query). CLIP-style embeddings remain a standard, cost-effective choice for image-text similarity search, particularly when paired with a vector database such as **Qdrant** or **FAISS** that supports hybrid text+image collections. Known failure modes to design against include **modality leakage** (visually similar but semantically irrelevant pages being retrieved, e.g., two pages sharing the same template) and **dominant-modality bias** (textual matches outscoring visual matches unless fusion weights are explicitly tuned).
+
+### 3.3 Vision-Language Models for chart and table reasoning
+
+VLMs such as GPT-4o and open alternatives like LLaVA are used to extract and reason over the visual structure of tables and charts that plain-text parsers cannot handle — for example, by converting a chart or table image into a structured Markdown or JSON representation that can then be merged back with the surrounding textual context. This "convert visual structure to text, then integrate" approach is a documented technique specifically proposed for financial-document RAG. However, VLMs are also known to hallucinate specific numeric values when reading charts, which is why chart-QA style evaluation sets and explicit bounding-box or cell-level citations are recommended safeguards rather than trusting VLM outputs unconditionally.
+
+### 3.4 Text-to-SQL agents and the enterprise accuracy gap
+
+A critical and often underestimated risk area for OmniBrain's SQL Agent is the gap between academic text-to-SQL benchmarks and real enterprise performance. On the original Spider benchmark, frontier models exceed 90% execution accuracy; on **Spider 2.0**, which reflects realistic enterprise schemas, multi-step queries, and large multi-thousand-column databases, even frontier models drop to roughly **17–21% accuracy**. Independent measurements tell the same story: Snowflake's internal evaluation of GPT-4o on 150 real business-intelligence questions found only about 51% accuracy — meaning roughly every second query was wrong while still looking syntactically valid and executing without error, which is the most dangerous kind of failure because there is no runtime signal that anything went wrong. The literature converges on one mitigation: adding an explicit **semantic layer** or knowledge-graph representation of the schema (rather than letting the LLM interpret raw table/column names) can move accuracy from the 15–50% range up into the 90%+ range. This directly informs OmniBrain's SQL Agent design (Section 4.4).
+
+### 3.5 Evaluation, observability, and guardrails
+
+**Langfuse** is a widely used open-source LLM observability platform that treats each model call as a structured "generation" — capturing prompt, completion, token counts, latency, and cost — nested inside traces and sessions, so that a multi-agent workflow's full execution path can be reconstructed after the fact. It supports LLM-as-a-judge scoring, dataset curation, and prompt version management, but by itself it is a *logging and scoring* layer rather than a request-time firewall. **NeMo Guardrails**, NVIDIA's open-source toolkit, complements this by acting as an inline **runtime policy layer**: it defines five categories of rails — input, dialog, retrieval, execution, and output — using a domain-specific language called Colang. Its retrieval rails can filter or drop retrieved chunks that match disallowed patterns before they ever reach the generator, and its output rails include self-check fact-checking and hallucination-detection flows specifically intended for RAG applications. The current best-practice pattern in the field is layered: **evaluations** catch quality problems offline before deployment, **guardrails** intercept problems inline at request time, and **observability** (Langfuse) captures what actually happened in production so that failures missed by the first two layers can still be found and fixed. OmniBrain adopts this three-layer model directly.
+
+---
+
+## 4. System Architecture
+
+### 4.1 High-level design
+
+OmniBrain follows a **supervisor-orchestrated, graph-based multi-agent architecture**. A single LangGraph state graph maintains shared conversational and task state; a supervisor node inspects the incoming query (and, once ingestion has occurred, the internal structure of the retrieved resource — is it a scanned image, a table, a narrative passage, or a request for time-series data?) and routes to one or more specialist nodes. Specialist outputs are written back into shared state, and a reducer/synthesis node merges them into a final, cited response, which then passes through the guardrails layer before being returned to the user.
 
 ```mermaid
 flowchart TD
-    UQ["👤 User Query"] --> SUP["🧭 Supervisor Router<br/>(Intent Classification & Agent Dispatch)"]
-    
-    SUP -->|Text / Narrative RAG| SA["🔍 Search Agent<br/>(Qdrant Vector + BM25 Sparse RRF)"]
-    SUP -->|Charts / Diagrams / OCR| VA["🖼️ Vision Agent<br/>(CLIP Layout & VLM Reasoning)"]
-    SUP -->|Structured / Tabular SQL| QA["🗄️ SQL Agent<br/>(Safe Text-to-SQL Execution)"]
-    
-    SA --> RED["🧩 Master Reducer<br/>(Output Synthesis & Citation Dedup)"]
-    VA --> RED
-    QA --> RED
-    
-    RED --> REF["👁️ Self-Reflection<br/>(Groundedness & Factuality Check)"]
-    REF --> RESP["📄 Verified Response + Exact Citations"]
+    U["👤 User Query<br/><i>e.g. margin trends vs. stock volatility</i>"] --> S
+
+    S["🧭 Supervisor Agent — LangGraph<br/>task decomposition · modality routing · state & memory"]
+
+    S --> SA["🔍 Search Agent<br/>semantic text retrieval<br/>Qdrant / FAISS + embeddings"]
+    S --> VA["🖼️ Vision Agent<br/>table & chart parsing<br/>GPT-4o / LLaVA"]
+    S --> QA["🗄️ SQL Agent<br/>text-to-SQL over<br/>historical structured data"]
+
+    SA --> R["🧩 Synthesis / Reducer Node<br/>merges agent outputs + citations"]
+    VA --> R
+    QA --> R
+
+    R --> G["🛡️ Guardrails & Evaluation Layer<br/>NeMo Guardrails (inline policy)<br/>Langfuse (tracing, hallucination &amp; grounding scoring)"]
+
+    G --> O["📄 Cited Investment Memo Output"]
+
+    style U fill:#eef2ff,stroke:#4338ca,color:#1e1b4b
+    style S fill:#1c3d5a,stroke:#0f2438,color:#ffffff
+    style SA fill:#dcfce7,stroke:#15803d,color:#052e16
+    style VA fill:#ffedd5,stroke:#c2410c,color:#431407
+    style QA fill:#e0e7ff,stroke:#4338ca,color:#1e1b4b
+    style R fill:#fef9c3,stroke:#a16207,color:#422006
+    style G fill:#dcfce7,stroke:#166534,color:#052e16
+    style O fill:#eef2ff,stroke:#4338ca,color:#1e1b4b
 ```
 
-### 2. Multi-Modal Document Ingestion & Indexing Pipeline
+**Legend:** the Supervisor fans work out to whichever specialist agents a query needs (in parallel where sub-tasks are independent, sequentially where one agent's output feeds another), the Reducer merges results with citations attached, and every output passes through the Guardrails/Evaluation layer before reaching the user.
+
+### 4.2 Ingestion pipeline (offline / document-load time)
 
 ```mermaid
 flowchart LR
-    DOC["📥 Upload Document<br/>(PDF, DOCX, PPTX, MD, TXT)"] --> PARSER["📐 Layout Parser<br/>(Extract Text, Tables, Charts)"]
-    PARSER --> CHUNK["✂️ Semantic Chunker<br/>(Paragraph Sliding Window)"]
-    CHUNK --> VEC["🗂️ Qdrant Vector Store<br/>(Dense Embeddings)"]
-    CHUNK --> BM["⚡ BM25 Sparse Index<br/>(Term Frequency Engine)"]
-    PARSER --> IMG_VEC["🖼️ Qdrant Image Store<br/>(CLIP Vision Embeddings)"]
+    A["📥 500-page PDF"] --> B["📐 Layout Analysis<br/>classify: text / table / chart / header"]
+    B --> C1["✂️ Text Chunking<br/>&amp; Embedding"]
+    B --> C2["📊 Table & Chart Extraction<br/>→ VLM → structured Markdown/JSON"]
+    B --> C3["🏷️ Structured Data Linkage<br/>tickers, fiscal periods, IDs"]
+    C1 --> D["🗂️ Multi-Modal Index<br/>Qdrant / FAISS<br/>(text + image/table embeddings)"]
+    C2 --> D
+    C3 --> E["🗄️ SQL Metadata Scope<br/>links doc → historical DB"]
+
+    style A fill:#eef2ff,stroke:#4338ca,color:#1e1b4b
+    style B fill:#1c3d5a,stroke:#0f2438,color:#ffffff
+    style C1 fill:#dcfce7,stroke:#15803d,color:#052e16
+    style C2 fill:#ffedd5,stroke:#c2410c,color:#431407
+    style C3 fill:#e0e7ff,stroke:#4338ca,color:#1e1b4b
+    style D fill:#fef9c3,stroke:#a16207,color:#422006
+    style E fill:#fef9c3,stroke:#a16207,color:#422006
+```
+
+1. **Document parsing & layout analysis** — the 500-page PDF is split by page; layout-aware parsers (e.g., Docling/Unstructured-style tools) classify each region as narrative text, table, chart/image, or header/footer.
+2. **Text chunking & embedding** — narrative text is chunked (semantically, not purely by token count) and embedded into the text collection.
+3. **Table & chart extraction** — table and chart regions are cropped and passed to the Vision Agent's VLM, which converts them into structured Markdown/JSON, which is then embedded alongside a CLIP embedding of the raw image for cross-modal similarity search.
+4. **Structured data linkage** — where the document references tickers, fiscal periods, or company identifiers, these are extracted as metadata used later to scope the SQL Agent's queries to the correct historical dataset.
+5. **Indexing** — all embeddings (text and image/table) are written into the multi-modal Qdrant/FAISS collection, with metadata (page number, bounding box, section heading) preserved for later citation.
+
+### 4.3 Agentic Orchestrator (LangGraph) — Module Detail
+
+The orchestrator is the control plane of OmniBrain. Its responsibilities, aligned with the architecture patterns reviewed in Section 3.1, are:
+
+- **State management** — a single shared state object (query, retrieved evidence per modality, intermediate agent outputs, citation list, guardrail flags) flows through every node, avoiding the "lost context between agent calls" problem common in looser multi-agent frameworks.
+- **Routing logic** — the supervisor classifies each sub-task by required modality (text/table/chart/structured-data) and dispatches to one or more specialists in parallel where sub-tasks are independent, or sequentially where one agent's output feeds another (e.g., the SQL Agent needs the fiscal period identified by the Search Agent first).
+- **Checkpointing & durability** — state is checkpointed at each node transition so that a failure partway through a long-running 500-page analysis does not require restarting from scratch.
+- **Memory** — short-term memory (current session state) is distinguished from longer-term memory (e.g., a cache of previously extracted tables for the same document), reducing redundant VLM calls on repeated queries against the same corpus.
+- **Cost-tiered model selection** — following the pattern noted in Section 3.1, the supervisor uses a stronger reasoning-capable model for routing/synthesis decisions, while individual specialist agents use smaller, cheaper models tuned to their narrow task.
+
+### 4.4 Specialist Agents
+
+**Search Agent (semantic retrieval).** Performs dense retrieval over the text collection in Qdrant/FAISS, optionally combined with a reranking step, to surface the narrative passages most relevant to the query. Returns passages with page-level provenance for later citation.
+
+**Vision Agent (VLM-based table/chart reasoning).** Given a query that references a specific figure, table, or trend, the Vision Agent retrieves the relevant image/table embeddings via CLIP similarity search, then invokes the VLM (GPT-4o/LLaVA-class) to answer the sub-question against the actual pixel content rather than a lossy caption. To mitigate the numeric-hallucination risk noted in Section 3.3, the agent is designed to (a) request explicit cell/axis-level references from the VLM rather than free-form summaries, and (b) cross-check any extracted number against the guardrails layer's fact-checking rail before it is allowed into the final synthesis.
+
+**Text-to-SQL Agent (structured historical data).** Given the enterprise accuracy gap documented in Section 3.4, this agent is *not* designed as a naive "schema-in-prompt" text-to-SQL call. Instead it follows the two-stage pattern shown to be effective in current agentic text-to-SQL research: (1) a **routing stage** that selects the correct database/table given the natural-language question, and (2) a **schema-retrieval stage** that pulls only the relevant table/column definitions from a vector store of schema documentation before query generation — effectively giving the SQL Agent its own lightweight, schema-scoped RAG step rather than relying on the LLM's raw guess at column meaning. Generated SQL is executed against a read-only replica, and results are validated for row-count sanity and unit consistency before being handed back to the supervisor.
+
+### 4.5 Multi-Modal Retrieval Layer (Qdrant / FAISS)
+
+The vector store holds (at minimum) two collections — text-chunk embeddings and image/table embeddings (CLIP or an equivalent vision encoder) — with shared metadata schemas so that a single query can be fused across both. Given the modality-bias risk noted in Section 3.2, fusion (e.g., Reciprocal Rank Fusion) weights between text and image results should be tunable rather than fixed, since text results otherwise tend to dominate.
+
+### 4.6 Evaluation & Guardrails Layer
+
+```mermaid
+flowchart TB
+    subgraph L1["🧪 Layer 1 — Evals (offline, pre-deployment)"]
+        direction LR
+        E1["Chart-QA test set"] --- E2["BIRD/Spider-style SQL set"] --- E3["Regression suite"]
+    end
+    subgraph L2["🛡️ Layer 2 — Guardrails (inline, request-time)"]
+        direction LR
+        G1["Retrieval rails<br/>filter low-confidence chunks"] --- G2["Output rails<br/>fact-check &amp; hallucination check"] --- G3["Dialog/topic rails<br/>scope control"]
+    end
+    subgraph L3["📊 Layer 3 — Observability (Langfuse, production)"]
+        direction LR
+        O1["End-to-end tracing"] --- O2["Cost / latency dashboards"] --- O3["LLM-as-judge scoring"]
+    end
+
+    L1 -->|catches quality issues before ship| L2
+    L2 -->|blocks/flags bad responses live| L3
+    L3 -->|feeds findings back into new evals| L1
+
+    style L1 fill:#e0e7ff,stroke:#4338ca
+    style L2 fill:#dcfce7,stroke:#15803d
+    style L3 fill:#fef9c3,stroke:#a16207
+```
+
+OmniBrain adopts this three-layer reliability pattern from Section 3.5:
+
+- **Evals (offline)** — a held-out set of question/answer pairs (including chart-QA style questions to specifically test the Vision Agent, and BIRD/Spider-style SQL questions to test the SQL Agent) is used to regression-test the pipeline before any change is deployed.
+- **Guardrails (inline, NeMo Guardrails)** — retrieval rails filter out low-confidence or off-scope retrieved chunks before generation; output rails run self-check fact-checking and hallucination-detection flows against the retrieved evidence, and topic/dialog rails keep the agent from answering outside the scope of the loaded financial documents (e.g., refusing unrelated investment-advice requests it isn't authorized to make).
+- **Observability (Langfuse)** — every agent call, tool invocation, and retrieval step is traced end-to-end, with token cost, latency, and LLM-as-a-judge groundedness/faithfulness scores attached to each trace, enabling both real-time monitoring dashboards and post-hoc root-cause analysis when an analyst flags a bad answer.
+
+---
+
+### Overall Architecture
+
+```
+   React + TypeScript SPA  ───▶  FastAPI  ───▶  Ingestion Layer
+   (Tailwind, React Query)        │            pdfplumber: text + tables,
+                                   │            page + section tagging
+                                   │                      │
+                                   │            ┌─────────▼─────────┐
+                                   │            │   Vector Store     │  per-document TF-IDF
+                                   │            │  (vectorstore.py)  │  → FAISS index
+                                   │            └─────────┬─────────┘
+                                   │                      │
+                          question │           ┌──────────▼──────────┐
+                                   └──────────▶ │  Supervisor Agent    │  classifies intent,
+                                                │                      │  picks agent(s)
+                                                └──┬───────────────┬──┘
+                                                   │               │
+                                       ┌───────────▼───┐   ┌───────▼────────┐
+                                       │ Text Retrieval │   │  Table Agent    │
+                                       │     Agent      │   │ (hybrid search) │
+                                       └───────┬────────┘   └───────┬─────────┘
+                                               └─────────┬───────────┘
+                                                          ▼
+                                             ┌────────────────────────┐
+                                             │   LLM Synthesis          │  Groq (or extractive
+                                             │   (llm.py)                │  fallback, no key)
+                                             └────────────┬───────────┘
+                                                          ▼
+                                             ┌────────────────────────┐
+                                             │  Groundedness Checker    │  numeric + lexical
+                                             │  (agents.py)               │  overlap vs. context
+                                             └────────────┬───────────┘
+                                                          ▼
+                                        Answer + citations + agent trace + score
+                                                          │
+                                                          ▼
+                                              SQLite (documents, query_log)
+                                              → /api/stats
 ```
 
 ---
 
-## 🧩 Component Breakdown
+## 5. Proposed Technology Stack
 
-### 1. Supervisor Node (`agents/supervisor.py`)
-- Sanitizes user input and prompts LLM for structured JSON routing decisions.
-- Identifies single or multi-agent execution paths with calibrated confidence scores.
-- Automatically falls back to safe text search if query is unparseable or empty.
-
-### 2. Search Agent (`agents/search_agent.py`)
-- Executes hybrid retrieval combining Qdrant dense vector search with in-memory BM25 Okapi scoring.
-- Enforces token window limits using `compress_context_chunks`.
-- Synthesizes grounded answers strictly using retrieved context with transparent no-match handling.
-
-### 3. Vision Agent (`agents/vision_agent.py`)
-- Searches Qdrant image collections for chart, table, and diagram region embeddings.
-- Synthesizes visual answers grounded in extracted layout elements with exact page references.
-
-### 4. SQL Agent (`agents/sql_agent.py`)
-- Converts natural language queries into read-only SQL (`SELECT` / `WITH`).
-- Validates SQL syntax to block destructive statements (`DROP`, `DELETE`, `UPDATE`, `ALTER`, `TRUNCATE`).
-- Executes queries on configured PostgreSQL or in-memory SQLite schema (`sales_records`) and returns plain-English explanations.
-
-### 5. Master Reducer (`agents/reducer.py`)
-- Consolidates responses from parallel agents into a unified, non-redundant synthesis.
-- Deduplicates citations and calculates aggregate confidence scores.
-- Generates context-aware follow-up suggestion chips.
-
-### 6. Self-Reflection Node (`agents/reflection.py`)
-- Cross-checks synthesized answers against retrieved source documents.
-- Evaluates groundedness scores and flags verification status (`PASSED`, `UNVERIFIED`).
+| Layer | Component | Role |
+|---|---|---|
+| Orchestration | LangGraph (+ `langgraph-supervisor`) | State graph, supervisor routing, checkpointing |
+| Reasoning (supervisor) | GPT-4o-class / Claude Opus-class model | Task decomposition, routing, final synthesis |
+| Reasoning (workers) | Smaller/cheaper models (e.g., GPT-4o-mini class) | Narrow-task execution inside each specialist agent |
+| Vision-Language reasoning | GPT-4o / LLaVA | Table & chart extraction and visual QA |
+| Vector database | Qdrant or FAISS | Multi-modal (text + image) hybrid retrieval |
+| Image/text embeddings | CLIP (or SigLIP-class alternative) | Cross-modal similarity search |
+| Structured data | SQL database (e.g., Postgres) + Text-to-SQL agent | Historical stock/financial time-series queries |
+| Document parsing | Layout-aware PDF parser (Docling/Unstructured-class) | Splitting text, tables, charts, images by region |
+| Guardrails | NVIDIA NeMo Guardrails (Colang) | Inline input/retrieval/output policy enforcement |
+| Observability & evals | Langfuse | Tracing, cost/latency, LLM-as-judge scoring, datasets |
 
 ---
 
-## 🛠️ Technology Stack
+## 6. Evaluation Methodology
 
-| Layer | Technologies |
+To validate OmniBrain against its stated goal — bypassing the hallucination risk of standard LLMs — the following evaluation dimensions are proposed:
+
+1. **Groundedness / Faithfulness** — the proportion of factual claims in the final memo that can be traced to a specific cited passage, table cell, or SQL result, scored via an LLM-as-judge pipeline in Langfuse.
+2. **Routing accuracy** — whether the supervisor dispatches each sub-question to the correct specialist agent (text vs. vision vs. SQL), measured against a labeled query set.
+3. **Numeric accuracy on charts/tables** — a dedicated chart-QA-style test set comparing Vision Agent extractions against ground-truth values, since VLM numeric hallucination is a known failure mode.
+4. **SQL execution accuracy** — measured on both a general benchmark (e.g., BIRD) and a domain-specific enterprise-style query set, given the well-documented academic-to-enterprise accuracy gap.
+5. **Guardrail effectiveness** — false-positive/false-negative rates of the NeMo Guardrails hallucination and topic-safety rails, tested adversarially rather than assumed to work out of the box.
+6. **End-to-end latency and cost** — per-query latency and token cost broken down by agent, to validate the cost-tiered model-selection strategy in Section 4.3.
+
+---
+
+## Features implemented
+
+| Requirement | Implementation |
 |---|---|
-| **Agent Orchestration** | LangGraph, LangChain Core, Python 3.10+ |
-| **Backend API** | FastAPI 0.140, Uvicorn, Pydantic v2, Starlette |
-| **Vector Database & Search** | Qdrant Client (REST / In-Memory), BM25 Okapi Sparse Search, RRF |
-| **Document Ingestion** | PyPDF, PDFPlumber, python-docx, python-pptx |
-| **Relational Database** | SQLAlchemy, SQLite, PostgreSQL compatible |
-| **Frontend SPA** | React 18, Vite, Tailwind CSS, Framer Motion, Lucide React, Recharts |
-| **Observability & Testing** | LangSmith/LangFuse telemetry schema, PyTest, AnyIO, TestClient |
+| Document ingestion (PDF, mixed text/tables) | `backend/ingestion.py` — pdfplumber, page + section-aware chunking |
+| Agentic orchestration / routing | `backend/agents.py` — `SupervisorAgent` routes to text/table agents |
+| Multi-modal retrieval | TF-IDF + FAISS text index; hybrid semantic+keyword table index |
+| Grounded generation + citations | Every answer cites page, section, modality |
+| Groundedness / hallucination check | Numeric + lexical overlap scoring, flags `low_confidence` |
+| Query scoping / filters | Scope toggle (all / text / tables) + section filter, both in UI and API |
+| Agent transparency | "Routing strip" in the UI shows which agent(s) fired and why |
+| UI/UX | React + TypeScript SPA, Tailwind CSS, brain-circuit brand identity, fully responsive, loading/error states via React Query |
+| Persistence & observability | SQLite audit log of every ingest and query; `/api/stats` aggregate metrics |
+| Hosting | Render / Hugging Face Spaces / any Docker host — multi-stage build included |
+| Sample corpus | `data/sample_document.pdf` — 10-page fictional annual report, generated by `data/generate_sample_doc.py` |
+| Pre-tested Q&A | `data/qa_pairs.json` — 10 pairs, verified against the live pipeline |
+| Automated tests | `tests/` — 21 pytest tests (ingestion, retrieval, routing, groundedness, API) |
+| CI | `.github/workflows/ci.yml` — runs pytest + frontend type-check/build on every push |
 
 ---
 
-## 🔌 API Reference
+## Running the project (VS Code)
 
-### Document Ingestion
-- `POST /documents/upload` — Asynchronously upload and ingest PDF, DOCX, PPTX, MD, or TXT document.
-- `GET /documents` — List all registered uploaded documents with page and chunk metadata.
-- `GET /documents/{document_id}/status` — Poll document ingestion status (`received` → `parsing` → `embedding` → `ready`).
-- `GET /documents/{document_id}/details` — Get full document inspection metadata and chunk counts.
-- `DELETE /documents/{document_id}` — Delete document file and purge vectors from Qdrant and BM25 index.
+**Requirements:** Python 3.10+, Node.js 20.19+ (check with `node --version`; the frontend build tooling needs the newer `node:util` API), VS Code with the Python extension.
 
-### Multi-Agent Query & Streaming
-- `POST /query` — Run full LangGraph StateGraph orchestration pipeline over target document or SQL database.
-- `POST /query/stream` — Real-time Server-Sent Events (SSE) streaming of agent execution steps and token chunks.
+1. Open this folder in VS Code (`File → Open Folder…`).
+2. Open a terminal (`` Ctrl+` ``) and run the setup/run script:
 
-### Observability & Tracing
-- `GET /tracing` — List recent execution traces with step logs and token analytics.
-- `GET /tracing/{request_id}` — Inspect structured telemetry for an individual query execution trace.
-- `GET /analytics/overview` — Get platform-wide aggregated query counts, latency percentiles, token usage, and agent distributions.
+   ```bash
+   # macOS / Linux
+   bash run.sh
 
-### Collections & System
-- `POST /collections` — Create document grouping collections.
-- `GET /collections` — List all document collections.
-- `DELETE /collections/{collection_id}` — Delete a collection.
-- `GET /health` — Health check endpoint.
-- `GET /` — API root index.
+   # Windows
+   run.bat
+   ```
 
----
+   This creates a Python virtual environment, installs backend dependencies,
+   generates the bundled sample PDF if missing, creates `.env` from the
+   template, installs + builds the React frontend, and starts the server.
 
-## 🏁 Getting Started
+3. Open **http://localhost:8000** in your browser.
+4. Click **"Use sample report instead"** to try it immediately, or drag in
+   your own PDF.
 
-### 1. Prerequisites
-- Python 3.10 or higher
-- Node.js 18+ and npm
-- (Optional) Qdrant instance or Docker
+**Alternative — VS Code's built-in Run button:** press `F5` (uses
+`.vscode/launch.json`), or run the tasks individually from the Command
+Palette → *Tasks: Run Task* → `OmniBrain: 1/2/3/4 …`.
 
-### 2. Backend Setup
-```powershell
-# Clone repository
-git clone https://github.com/Adityacoderrrr/omnibrain.git
-cd omnibrain
+**Frontend hot-reload during development:** run the `OmniBrain: Frontend
+dev server (hot reload)` task (or `npm run dev` inside `frontend-react/`)
+to get Vite's dev server on `:5173` with instant reload, proxied to the
+FastAPI backend on `:8000`.
 
-# Activate virtual environment
-.\.venv\Scripts\Activate.ps1
+### Enabling full LLM-generated answers
 
-# Install dependencies (if needed)
-pip install -r requirements.txt
+Without an API key, OmniBrain still runs the entire pipeline (ingestion,
+routing, retrieval, citation, groundedness scoring) using a deterministic
+extractive fallback — useful for grading without needing a key. To get
+fluent, synthesized answers instead of extracted snippets:
+
+1. Create a free key at **https://console.groq.com/keys** (no card required, ~30 seconds).
+2. Add it to `.env`:
+   ```
+   GROQ_API_KEY=gsk_...
+   ```
+3. Restart the server.
+
+### Running the tests
+
+```bash
+source venv/bin/activate   # or venv\Scripts\activate on Windows
+pytest
 ```
 
-### 3. Environment Configuration
-Create a `.env` file in the project root:
-```ini
-APP_ENV=development
-QDRANT_URL=:memory:
-DEFAULT_LLM_MODEL=gpt-4o
-OPENAI_API_KEY=mock-key
-DATABASE_URL=
-UPLOAD_DIR=storage/uploads
-```
+---
+
+## Deploying to a free host
+
+Both routes below build the included multi-stage `Dockerfile`, which
+compiles the React app and bundles it into the FastAPI image — no separate
+frontend hosting needed.
+
+**Render:**
+1. Push this repo to GitHub.
+2. In Render, "New Web Service" → connect the repo. `render.yaml` is
+   already configured for a Docker deploy.
+3. Add `GROQ_API_KEY` as an environment variable (free, from console.groq.com/keys).
+
+**Hugging Face Spaces (Docker SDK):**
+1. Create a new Space → SDK: Docker.
+2. Push this repo's contents — the included `Dockerfile` builds and runs
+   the app on port 7860 automatically.
+3. Add `GROQ_API_KEY` as a Space secret (free, from console.groq.com/keys).
 
 ---
 
-## 🖥️ Running the Application
+## Design decisions & trade-offs
 
-### 1. Start the FastAPI Backend Server
-```powershell
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-API Documentation will be accessible at: `http://127.0.0.1:8000/docs`
+- **TF-IDF over a downloaded embedding model:** trades some semantic recall
+  for zero network dependency, low memory, and fast cold starts on free
+  hosting tiers. Swapping in `sentence-transformers` or a hosted embeddings
+  API is isolated to `backend/vectorstore.py`.
+- **Extractive fallback when no LLM key is set:** keeps the full agentic
+  pipeline demonstrable and gradable without requiring a key.
+- **Deterministic groundedness check** (numeric + lexical overlap) rather
+  than a second LLM call: cheap, fast, and catches the dominant failure
+  mode (fabricated figures) without doubling latency and cost per query.
+- **SQLite over an in-memory-only registry:** the vector index itself stays
+  in-memory (rebuilt cheaply from the PDF on ingest), but document metadata
+  and the full query audit trail persist across restarts — closer to what
+  a real deployment needs for observability, without the operational
+  overhead of a hosted database.
+- **React + TypeScript over a template UI framework:** type-safe API
+  contracts shared conceptually between `backend/schemas.py` and
+  `frontend-react/src/types.ts`, component-level state via React Query
+  (loading/error/success handled per-request), Tailwind v4's CSS-first
+  theming for the custom dark "console" identity.
 
-### 2. Start the React + Vite Frontend
-```powershell
-cd frontend
-npm install
-npm run dev
+## Error handling
+
+- Non-PDF uploads and unparseable PDFs return clear 4xx errors.
+- Empty questions are rejected before hitting retrieval.
+- Queries with no retrieved evidence return an explicit "not found in this
+  document" response rather than a hallucinated one.
+- Overlong retrieved context is truncated with a surfaced warning rather
+  than silently dropped or erroring.
+- A global FastAPI exception handler logs and returns a clean 500 instead
+  of leaking a stack trace to the client.
+- The frontend surfaces upload and query failures inline (toast-free,
+  in-thread) rather than failing silently.
+
+
+## Project layout
+
 ```
-Access the OmniBrain web interface at: `http://localhost:5173`
+omnibrain/
+├── backend/
+│   ├── main.py              FastAPI app — ingest, query, stats, chart/page images
+│   ├── ingestion.py          PDF → text chunks + tables + chart images
+│   ├── vectorstore.py        Qdrant-backed retrieval (text/table/chart)
+│   ├── sql_store.py           Per-document SQLite + SQL agent
+│   ├── vision.py                VLM chart reading (Groq vision)
+│   ├── agents.py                LangGraph supervisor + all agent nodes
+│   ├── guardrails.py            NeMo Guardrails topical gate
+│   ├── guardrails/               NeMo Guardrails config + Colang flow
+│   ├── observability.py          Langfuse tracing (no-op without keys)
+│   ├── llm.py                    Groq client + extractive fallback
+│   ├── db.py                      SQLite persistence (documents, query_log)
+│   └── schemas.py                Request/response models
+├── frontend-react/            React + TypeScript + Tailwind SPA
+├── streamlit_app/app.py        Streamlit chat UI (same API)
+├── tests/                     43 pytest tests
+├── .github/workflows/ci.yml    Backend tests + frontend build on push/PR
+├── data/
+│   ├── generate_sample_doc.py  Builds the sample PDF, incl. 2 real charts
+│   ├── sample_document.pdf
+│   └── qa_pairs.json
+├── run.sh / run.bat             Backend + React setup & run
+├── run_streamlit.sh / .bat       Streamlit UI launch
+├── requirements.txt
+└── Dockerfile / render.yaml
+```
+
+
+
+## 7. Anticipated Challenges and Limitations
+
+- **VLM numeric hallucination on charts** remains an open problem industry-wide; OmniBrain mitigates but cannot fully eliminate this risk, and human-in-the-loop review is recommended for high-stakes financial figures.
+- **The enterprise text-to-SQL accuracy gap** is severe (roughly 15–50% raw accuracy on realistic enterprise schemas versus 90%+ on toy benchmarks); OmniBrain's schema-scoped retrieval design mitigates this but a fully deterministic semantic layer over the historical database would further improve reliability and is recommended as a future enhancement.
+- **Modality fusion bias** in the multi-modal retriever requires ongoing tuning as the document corpus grows and shifts in composition (more tables vs. more narrative text).
+- **Guardrail latency overhead** — LLM-based judge guardrails add meaningful latency (roughly 200ms–1s per check); a sampling strategy (full inline checks for high-stakes numeric claims, sampled checks elsewhere) is recommended rather than gating every token on every rail.
+- **Cost management** at 500-page document scale requires careful control of how many pages trigger a full VLM call versus a cheaper caption-based fallback.
 
 ---
 
-## 🧪 Automated Test Suite
+## 8. Future Scope
 
-OmniBrain includes comprehensive unit, integration, and end-to-end regression tests covering agent routing, SQL safety, hybrid RAG, trace recording, and analytics calculation.
-
-Run the test suite with:
-```powershell
-.\.venv\Scripts\pytest.exe -v
-```
-
-### Test Coverage Highlights:
-- `test_agents.py`: Supervisor classification, search agent compression, vision agent execution, SQL safety AST verification, reducer synthesis, and checkpointer recovery.
-- `test_api_smoke.py`: Root health, 415 format validation, and 404 document routing.
-- `test_enterprise_ingestion.py`: Layout parsing, chunking with overlap, and multi-format document parsing.
-- `test_enterprise_rag.py`: BM25 term frequency indexing, Reciprocal Rank Fusion (RRF), and keyword snippet highlighting.
-- `test_observability.py`: Self-reflection verification and telemetry trace store operations.
-- `test_final_e2e_integration.py`: End-to-end real document ingestion, grounded search vs. ungrounded refusal, SQL execution on SQLite schema, and analytics accuracy.
+- Extending the Vision Agent to page-as-image late-interaction retrieval (ColPali/ColQwen-style) for corpora with very high visual density, rather than caption-and-index alone.
+- Adding a deterministic semantic/knowledge-graph layer in front of the SQL Agent to push structured-data accuracy toward the 90%+ range demonstrated in recent enterprise text-to-SQL research.
+- Multi-document, cross-filing reasoning (e.g., comparing the same company's filings across multiple fiscal years) as an open-domain extension of the current closed-document design.
+- Human-in-the-loop approval workflows for high-stakes numeric claims before an investment memo is finalized, integrated as a LangGraph interrupt/checkpoint.
 
 ---
 
-## 📊 Verified Capabilities & Roadmap
+## 9. Conclusion
 
-### Verified & Implemented
-- [x] Multi-Agent Supervisor Router with LangGraph StateGraph orchestration.
-- [x] Hybrid RAG (Qdrant Dense Vector + BM25 Sparse Keyword with RRF $k=60$).
-- [x] Real multi-format ingestion (PDF, DOCX, PPTX, Markdown, TXT).
-- [x] Safe text-to-SQL with read-only validation against relational database.
-- [x] Master Reducer with multi-agent conflict resolution and citation deduplication.
-- [x] Self-reflection answer verification and groundedness scoring.
-- [x] Real-time SSE token and step streaming.
-- [x] Full observability trace telemetry and analytics endpoints.
-- [x] React 18 + Vite frontend with dark/glassmorphic design and interactive DAG visualizer.
-- [x] 100% test pass rate across 45 automated test cases.
-
-### Future Roadmap
-- [ ] ColPali / ColQwen page-as-image late-interaction retrieval for dense financial charts.
-- [ ] Enterprise semantic schema catalog for multi-thousand column data warehouses.
-- [ ] Cross-document multi-year comparative financial analysis.
-- [ ] Human-in-the-loop checkpoint approval for critical corporate actions.
+OmniBrain's core contribution is architectural: rather than treating multi-modality and multi-source reasoning as edge cases to be patched onto a standard RAG pipeline, it treats them as first-class routing decisions made by a supervising orchestrator over a team of specialized agents. Grounding this in a LangGraph state graph provides the durability and controllability needed for long, complex document-analysis workflows; a multi-modal vector store and VLM give the system genuine visual reasoning over tables and charts rather than lossy text approximations; a schema-aware Text-to-SQL agent addresses one of the best-documented reliability gaps in current LLM tooling; and a layered evaluation/guardrails/observability stack (NeMo Guardrails + Langfuse) gives the system the auditability that financial and other regulated use cases require. The result is a design intended not merely to answer questions about a document, but to produce answers whose provenance can be checked, line by line, against the source evidence.
 
 ---
 
-## 📜 License
-OmniBrain is licensed under the [MIT License](LICENSE).
+## 10. Selected References
+
+1. LangGraph multi-agent orchestration and supervisor pattern documentation — LangChain / LangGraph reference docs (reference.langchain.com, langchain.com/blog).
+2. "Scaling Beyond Context: A Survey of Multimodal Retrieval-Augmented Generation for Document Understanding," ACL 2026 (arXiv:2510.15253).
+3. "FinRAGBench-V: A Benchmark for Multimodal RAG with Visual Citation in the Financial Domain" (arXiv:2505.17471).
+4. "Multimodal RAG for financial documents: BART-based financial named entity recognition and attention-based table parsing for financial QA enhancement," The Visual Computer, 2026.
+5. Multimodal RAG architecture guide — BigDataBoutique (2026); Tensoria engineering guide on multimodal RAG (2026).
+6. NVIDIA NeMo Guardrails documentation and GitHub repository (docs.nvidia.com/nemo/guardrails; github.com/NVIDIA-NeMo/Guardrails).
+7. Langfuse documentation — tracing, evaluations, and security/guardrails integration (langfuse.com/docs).
+8. Text-to-SQL enterprise accuracy studies: Spider 2.0 (Lei et al., 2025), BEAVER enterprise benchmark (Chen et al., 2024), Snowflake internal BI benchmark, dbt "Semantic Layer vs. Text-to-SQL: 2026 Benchmark Update."
+9. "Both Ends Count! Just How Good are LLM Agents at Text-to-'Big SQL'?" (arXiv:2602.21480).
+
+*Note: This document synthesizes and paraphrases publicly available technical documentation, vendor guides, and 2026 research literature current as of August 2026. It is intended as a design/research reference, not as vendor-endorsed benchmark data — production accuracy figures should be re-validated against the current versions of each tool before deployment decisions are made.*
+
+
+
+
+
+
+
+
+
+
