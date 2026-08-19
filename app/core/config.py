@@ -63,7 +63,7 @@ class Settings:
     app_port: int = field(default_factory=lambda: _safe_int("APP_PORT", 8000))
 
     # --- Vector Database (Qdrant) Configuration ---
-    qdrant_url: str = field(default_factory=lambda: os.getenv("QDRANT_URL", "http://localhost:6333"))
+    qdrant_url: str = field(default_factory=lambda: os.getenv("QDRANT_URL", ":memory:"))
     qdrant_api_key: str | None = field(default_factory=lambda: os.getenv("QDRANT_API_KEY"))
     qdrant_text_collection: str = field(default_factory=lambda: os.getenv("QDRANT_TEXT_COLLECTION", "omnibrain_text"))
     qdrant_image_collection: str = field(default_factory=lambda: os.getenv("QDRANT_IMAGE_COLLECTION", "omnibrain_images"))
