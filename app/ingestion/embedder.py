@@ -32,36 +32,66 @@ from app.ingestion.pdf_parser import RegionType
 
 logger = logging.getLogger("omnibrain.ingestion.embedder")
 
+_IN_MEMORY_CLIENT: QdrantClient | None = None
+
+
+def get_in_memory_qdrant_client() -> QdrantClient:
+    """Returns a process-wide singleton in-memory Qdrant client."""
+    global _IN_MEMORY_CLIENT
+    if _IN_MEMORY_CLIENT is None:
+        _IN_MEMORY_CLIENT = QdrantClient(location=":memory:")
+        _ensure_collections_on_client(_IN_MEMORY_CLIENT)
+    return _IN_MEMORY_CLIENT
+
 
 def get_qdrant_client() -> QdrantClient:
+    """
+    Returns configured Qdrant client or gracefully falls back to the
+    persistent in-memory client if remote server is unconfigured or unreachable.
+    """
     settings = get_settings()
-    if settings.qdrant_url == ":memory:":
-        return QdrantClient(location=":memory:")
-    return QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
+    if not settings.qdrant_url or settings.qdrant_url == ":memory:":
+        return get_in_memory_qdrant_client()
+    try:
+        client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key, timeout=2.0)
+        # Check connectivity
+        client.get_collections()
+        return client
+    except Exception as exc:
+        logger.warning(
+            "Qdrant connection to '%s' failed: %s. Using persistent local in-memory Qdrant client.",
+            settings.qdrant_url,
+            exc,
+        )
+        return get_in_memory_qdrant_client()
+
+
+def _ensure_collections_on_client(
+    client: QdrantClient, vector_size_text: int = 1536, vector_size_image: int = 512
+) -> None:
+    """Idempotently create text and image collections on the given Qdrant client."""
+    settings = get_settings()
+    try:
+        existing = {c.name for c in client.get_collections().collections}
+        if settings.qdrant_text_collection not in existing:
+            client.create_collection(
+                collection_name=settings.qdrant_text_collection,
+                vectors_config=VectorParams(size=vector_size_text, distance=Distance.COSINE),
+            )
+        if settings.qdrant_image_collection not in existing:
+            client.create_collection(
+                collection_name=settings.qdrant_image_collection,
+                vectors_config=VectorParams(size=vector_size_image, distance=Distance.COSINE),
+            )
+    except Exception as exc:
+        logger.warning("Error ensuring collections on Qdrant client: %s", exc)
 
 
 def ensure_collections(vector_size_text: int = 1536, vector_size_image: int = 512) -> None:
-    """
-    Idempotently create the text and image collections if they don't exist yet.
-    Default vector sizes assume an OpenAI text embedding model (1536-d) and a
-    CLIP ViT-B/32 image encoder (512-d).
-    """
-    settings = get_settings()
+    """Idempotently create text and image collections if they don't exist yet."""
     client = get_qdrant_client()
+    _ensure_collections_on_client(client, vector_size_text, vector_size_image)
 
-    existing = {c.name for c in client.get_collections().collections}
-
-    if settings.qdrant_text_collection not in existing:
-        client.create_collection(
-            collection_name=settings.qdrant_text_collection,
-            vectors_config=VectorParams(size=vector_size_text, distance=Distance.COSINE),
-        )
-
-    if settings.qdrant_image_collection not in existing:
-        client.create_collection(
-            collection_name=settings.qdrant_image_collection,
-            vectors_config=VectorParams(size=vector_size_image, distance=Distance.COSINE),
-        )
 
 def _get_mock_embedding(text: str | bytes, size: int) -> list[float]:
     """Generates a deterministic unit-normalized vector for testing/local development."""
@@ -79,45 +109,51 @@ def embed_and_upsert_text_chunks(chunks: list[TextChunk], filename: str = "") ->
         return
 
     settings = get_settings()
-    client = get_qdrant_client()
 
-    vectors = None
-    if OpenAIEmbeddings is not None and settings.openai_api_key and settings.openai_api_key != "mock-key":
-        try:
-            embeddings_model = OpenAIEmbeddings(openai_api_key=settings.openai_api_key)
-            texts = [chunk.text for chunk in chunks]
-            vectors = embeddings_model.embed_documents(texts)
-        except Exception as exc:
-            logger.warning("OpenAIEmbeddings generation failed: %s. Falling back to mock embeddings.", exc)
-            vectors = None
-
-    texts = [chunk.text for chunk in chunks]
-    if vectors is None:
-        vectors = [_get_mock_embedding(text, size=1536) for text in texts]
-
-    points = []
-    for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
-        points.append(
-            PointStruct(
-                id=str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk.chunk_id)),
-                vector=vector,
-                payload={
-                    "document_id": chunk.document_id,
-                    "filename": filename or chunk.document_id,
-                    "page_number": chunk.page_number,
-                    "text": chunk.text,
-                },
-            )
-        )
-
-    client.upsert(collection_name=settings.qdrant_text_collection, points=points)
-
-    # Index into BM25 engine for hybrid search
+    # 1. Index into BM25 engine for sparse keyword / hybrid retrieval
     try:
         from app.ingestion.bm25_indexer import bm25_indexer
         bm25_indexer.add_chunks(chunks, filename=filename)
     except Exception as exc:
         logger.warning("BM25 indexing failed: %s", exc)
+
+    # 2. Embed and upsert into Qdrant
+    try:
+        client = get_qdrant_client()
+        _ensure_collections_on_client(client)
+
+        vectors = None
+        if OpenAIEmbeddings is not None and settings.openai_api_key and settings.openai_api_key != "mock-key":
+            try:
+                embeddings_model = OpenAIEmbeddings(openai_api_key=settings.openai_api_key)
+                texts = [chunk.text for chunk in chunks]
+                vectors = embeddings_model.embed_documents(texts)
+            except Exception as exc:
+                logger.warning("OpenAIEmbeddings generation failed: %s. Falling back to mock embeddings.", exc)
+                vectors = None
+
+        texts = [chunk.text for chunk in chunks]
+        if vectors is None:
+            vectors = [_get_mock_embedding(text, size=1536) for text in texts]
+
+        points = []
+        for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
+            points.append(
+                PointStruct(
+                    id=str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk.chunk_id)),
+                    vector=vector,
+                    payload={
+                        "document_id": chunk.document_id,
+                        "filename": filename or chunk.document_id,
+                        "page_number": chunk.page_number,
+                        "text": chunk.text,
+                    },
+                )
+            )
+
+        client.upsert(collection_name=settings.qdrant_text_collection, points=points)
+    except Exception as exc:
+        logger.warning("Qdrant text upsert failed: %s. Continuing with BM25 indexed data.", exc)
 
 
 def embed_and_upsert_image_regions(document_id: str, regions: list, filename: str = "") -> None:
@@ -126,46 +162,50 @@ def embed_and_upsert_image_regions(document_id: str, regions: list, filename: st
         return
 
     settings = get_settings()
-    client = get_qdrant_client()
+    try:
+        client = get_qdrant_client()
+        _ensure_collections_on_client(client)
 
-    points = []
-    for idx, region in enumerate(regions):
-        raw_type = getattr(region, "region_type", None)
-        region_type_str = str(raw_type.value) if isinstance(raw_type, RegionType) or hasattr(raw_type, "value") else str(raw_type or "")
-        region_type_lower = region_type_str.lower()
+        points = []
+        for idx, region in enumerate(regions):
+            raw_type = getattr(region, "region_type", None)
+            region_type_str = str(raw_type.value) if isinstance(raw_type, RegionType) or hasattr(raw_type, "value") else str(raw_type or "")
+            region_type_lower = region_type_str.lower()
 
-        if region_type_lower not in ("chart", "table"):
-            continue
+            if region_type_lower not in ("chart", "table"):
+                continue
 
-        page_number = getattr(region, "page_number", 1)
-        content = getattr(region, "content", b"")
-        content_bytes = content if isinstance(content, bytes) else str(content or "").encode("utf-8")
+            page_number = getattr(region, "page_number", 1)
+            content = getattr(region, "content", b"")
+            content_bytes = content if isinstance(content, bytes) else str(content or "").encode("utf-8")
 
-        # Basic mock CLIP embedding vector (512-d)
-        vector = _get_mock_embedding(content_bytes, size=512)
+            # Basic mock CLIP embedding vector (512-d)
+            vector = _get_mock_embedding(content_bytes, size=512)
 
-        points.append(
-            PointStruct(
-                id=str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{document_id}_img_{page_number}_{idx}")),
-                vector=vector,
-                payload={
-                    "document_id": document_id,
-                    "filename": filename or document_id,
-                    "page_number": page_number,
-                    "region_type": region_type_lower,
-                },
+            points.append(
+                PointStruct(
+                    id=str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{document_id}_img_{page_number}_{idx}")),
+                    vector=vector,
+                    payload={
+                        "document_id": document_id,
+                        "filename": filename or document_id,
+                        "page_number": page_number,
+                        "region_type": region_type_lower,
+                    },
+                )
             )
-        )
 
-    if points:
-        client.upsert(collection_name=settings.qdrant_image_collection, points=points)
+        if points:
+            client.upsert(collection_name=settings.qdrant_image_collection, points=points)
+    except Exception as exc:
+        logger.warning("Qdrant image upsert failed: %s", exc)
 
 
 def delete_document_vectors(document_id: str) -> None:
     """Deletes all text and image vectors associated with document_id from Qdrant."""
     settings = get_settings()
-    client = get_qdrant_client()
     try:
+        client = get_qdrant_client()
         from qdrant_client.models import Filter, FieldCondition, MatchValue
         doc_filter = Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))])
         
@@ -179,14 +219,15 @@ def delete_document_vectors(document_id: str) -> None:
         except Exception as e:
             logger.warning("Error deleting image vectors for document %s: %s", document_id, e)
 
-        # Remove from BM25 index
-        try:
-            from app.ingestion.bm25_indexer import bm25_indexer
-            bm25_indexer.remove_document(document_id)
-        except Exception as e:
-            logger.warning("Error removing document %s from BM25 index: %s", document_id, e)
     except Exception as exc:
         logger.error("Failed to delete vectors for document %s: %s", document_id, exc)
+
+    # Remove from BM25 index
+    try:
+        from app.ingestion.bm25_indexer import bm25_indexer
+        bm25_indexer.remove_document(document_id)
+    except Exception as e:
+        logger.warning("Error removing document %s from BM25 index: %s", document_id, e)
 
 
 
